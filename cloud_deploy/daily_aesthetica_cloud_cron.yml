@@ -1,0 +1,33 @@
+name: AESTHETICA Daily 50-Film Cloud VM Harvester
+
+on:
+  schedule:
+    # Runs at 18:00 UTC every day == 02:00 AM Beijing Time (Asia/Shanghai) on GitHub's 24/7 Cloud Ubuntu VM
+    - cron: '0 18 * * *'
+  workflow_dispatch: # Allows manual 1-click trigger in GitHub UI
+
+jobs:
+  harvest-and-deconstruct:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python & FFmpeg & yt-dlp on Cloud VM
+        run: |
+          sudo apt-get update && sudo apt-get install -y ffmpeg
+          pip install yt-dlp
+
+      - name: Run Daily 50-Film Aesthetic Harvester
+        run: |
+          python3 solution/AIPGC_Aesthetica_Studio_全栈审美数据库工作站/daily_aesthetica_harvester.py --limit 50 --live-web
+
+      - name: Commit & Push Updated Database (data_auto_batches.js & thumbs)
+        run: |
+          git config user.name "Aesthetica Cloud Bot"
+          git config user.email "bot@antigravity.local"
+          git add solution/AIPGC_Aesthetica_Studio_全栈审美数据库工作站/
+          git diff --staged --quiet || git commit -m "chore(aesthetica): auto-ingest daily 50 benchmark films [skip ci]"
+          git push

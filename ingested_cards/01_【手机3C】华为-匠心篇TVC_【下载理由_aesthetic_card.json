@@ -1,0 +1,31 @@
+{
+  "id": "AUTO-01_【手机",
+  "title": "华为匠心篇_自动摄取验证",
+  "category": "tech3c",
+  "duration_sec": 134.57,
+  "golden_silence_window_sec": "80.7s - 83.2s (60% Golden Ratio)",
+  "thumb": "/Users/mengxiangyun/Desktop/vibe/anti/solution/AIPGC_Aesthetica_Studio_全栈审美数据库工作站/ingested_cards/01_【手机3C】华为-匠心篇TVC_【下载理由_thumb_16x9.jpg",
+  "palette": [
+    {
+      "hex": "#0A0B0F",
+      "name": "Tone_1"
+    },
+    {
+      "hex": "#14181F",
+      "name": "Tone_2"
+    },
+    {
+      "hex": "#282E38",
+      "name": "Tone_3"
+    },
+    {
+      "hex": "#151A23",
+      "name": "Tone_4"
+    },
+    {
+      "hex": "#07090E",
+      "name": "Tone_5"
+    }
+  ],
+  "seedance_2_5_template": "【空间与机位光学】：16:9 · 50mm电影定焦 · T2.0浅景深 · 主色板 #0A0B0F/#14181F/#282E38/#151A23/#07090E\n【角色与动作因果时序】：[0-0.4s] 首帧微张嘴2~3mm自然开口；[0.4-5.0s] 物理因果动作推进；[5.0-7.0s] 2秒冷峻死寂落幅。\n【纯净音轨与声学空间混响】：Zero BGM！Zero 环境底噪！仅保留纯净人声与场景自然物理声学混响！\n【绝对物理负向禁令】：100% Deadpan！严禁假笑！严禁斗鸡眼！严禁直视镜头！"
+}

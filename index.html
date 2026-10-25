@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AESTHETICA STUDIO · AIPGC 殿堂级视听审美数据库与工作流中枢</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="studio-header">
+    <div class="header-inner">
+      <div class="brand-block">
+        <div class="brand-mark" aria-hidden="true">Æ</div>
+        <div>
+          <h1 class="brand-title">AESTHETICA STUDIO · AIPGC 全栈视听审美数据库</h1>
+          <p class="brand-subtitle">Reference 寻源 ➔ 八维法医级拆解 (光学/配色/运镜/BPM/修辞) ➔ Seedance 2.5 × ElevenLabs × 音乐接口一键编译</p>
+        </div>
+      </div>
+      <nav class="nav-tabs" aria-label="工作台主视图切换">
+        <button type="button" class="nav-tab active" data-view="matrix">📚 八维审美母片库</button>
+        <button type="button" class="nav-tab" data-view="compiler">⚙️ Reference ➔ AIGC 编译器</button>
+        <button type="button" class="nav-tab" data-view="sources">🌐 全球 16 大片源雷达</button>
+      </nav>
+    </div>
+  </header>
+
+  <main class="workspace-main">
+    <!-- VIEW 1: Aesthetic Matrix Grid -->
+    <section id="view-matrix">
+      <div class="filter-bar">
+        <div class="filter-row">
+          <div class="pill-group" id="categoryPills" role="group" aria-label="按素材品类筛选">
+            <button type="button" class="filter-pill active" data-cat="all">✦ 全部标杆</button>
+            <button type="button" class="filter-pill" data-cat="luxury">👑 顶奢时装屋 (YSL/Hermès/Prada)</button>
+            <button type="button" class="filter-pill" data-cat="tech3c">📷 3C与蔡司光学 (vivo/Apple/东芝)</button>
+            <button type="button" class="filter-pill" data-cat="industry">⚙️ 新能源与硬核智造 (好盈/空管)</button>
+            <button type="button" class="filter-pill" data-cat="aikeynote">🤖 AI峰会与科技人文 (火山/外滩)</button>
+            <button type="button" class="filter-pill" data-cat="biotech">🧬 生物医药大健康</button>
+            <button type="button" class="filter-pill" data-cat="culture">🏺 文旅非遗与东方美学</button>
+            <button type="button" class="filter-pill" data-cat="fashion_sport">⚡ 时尚体育与Match-Cut</button>
+            <button type="button" class="filter-pill" data-cat="architecture">🏛️ 顶奢建筑与高管肖像</button>
+          </div>
+        </div>
+        <div class="filter-row">
+          <div class="search-group">
+            <input type="search" id="searchInput" class="search-input" placeholder="搜索品牌 (vivo/YSL/Apple)、焦段 (85mm/24mm探针)、运镜 (Match-Cut/Whip-Pan)、色号 (#F37021)..." aria-label="全文检索审美数据库" />
+            <select id="moodSelect" class="select-ctrl" aria-label="按光影色调筛选">
+              <option value="all">🎨 全部光影影调</option>
+              <option value="chiaroscuro">🌑 高反差暗调 (Chiaroscuro 8:1~10:1)</option>
+              <option value="highkey">☀️ 高调清透柔光 (High-Key 2:1)</option>
+              <option value="golden">🌅 黄金时刻暖逆光 (Golden Hour 3500K)</option>
+              <option value="cold">❄️ 冷峻工业/粗野几何 (4500K~6000K)</option>
+            </select>
+            <select id="pacingSelect" class="select-ctrl" aria-label="按剪辑BPM筛选">
+              <option value="all">🥁 全部剪辑 BPM</option>
+              <option value="slow">🧘 静谧呼吸慢镜 (50–76 BPM)</option>
+              <option value="medium">🎬 叙事递进律动 (78–108 BPM)</option>
+              <option value="fast">⚡ 高能排比快切 (112–145 BPM)</option>
+            </select>
+          </div>
+          <div id="resultCount" style="font-size:0.84rem;color:var(--text-secondary);"></div>
+        </div>
+      </div>
+
+      <div id="matrixGrid" class="matrix-grid"></div>
+    </section>
+
+    <!-- VIEW 2: Interactive Reference -> AIGC Compiler -->
+    <section id="view-compiler" class="hidden">
+      <div class="compiler-layout">
+        <div class="spec-box">
+          <h2 style="font-size:1.1rem;margin-bottom:0.8rem;color:var(--accent-gold-tint);">Step 1 · 选择对标母片锚点 & 输入你的业务参数</h2>
+          <div style="display:flex;flex-direction:column;gap:0.85rem;">
+            <label>
+              <span style="font-size:0.82rem;color:var(--text-secondary);">1. 挂载审美母片 DNA 底座 (自动继承6维光学指纹+光比+运镜+声学)：</span>
+              <select id="compilerTemplateSelect" class="select-ctrl" style="width:100%;margin-top:0.3rem;"></select>
+            </label>
+            <label>
+              <span style="font-size:0.82rem;color:var(--text-secondary);">2. 你的产品 / 角色主体与核心场景：</span>
+              <input type="text" id="compSubject" class="form-input" style="width:100%;margin-top:0.3rem;" value="身着炭灰高定西装的技术创始人在暗调光学实验室凝视一枚悬浮晶圆" />
+            </label>
+            <label>
+              <span style="font-size:0.82rem;color:var(--text-secondary);">3. 毫秒级物理因果动作 (拒绝形容词，只写物理动词)：</span>
+              <input type="text" id="compAction" class="form-input" style="width:100%;margin-top:0.3rem;" value="右手食指轻触蓝宝石基座，晶圆折射出琥珀色流光，人物微启双唇2mm从容开口" />
+            </label>
+            <label>
+              <span style="font-size:0.82rem;color:var(--text-secondary);">4. 角色台词 / 旁白 VO (自动按冷面博弈公式精算镜头秒数)：</span>
+              <textarea id="compDialogue" class="form-textarea" rows="2" style="width:100%;margin-top:0.3rem;">真正的精密，从不喧哗；它在微米之间，定义新的秩序。</textarea>
+            </label>
+            <label>
+              <span style="font-size:0.82rem;color:var(--text-secondary);">5. 屏幕 HUD 硬核参数角标 (声画分流：VO不念，交由屏幕左下角呈现)：</span>
+              <input type="text" id="compHud" class="form-input" style="width:100%;margin-top:0.3rem;" value="0.01μm 光学公差 · CNAS 国家级实验室认证 · 99.999% 良率" />
+            </label>
+            <div id="cadenceReadout" class="spec-box" style="background:#050608;font-size:0.82rem;"></div>
+          </div>
+        </div>
+        <div class="spec-box" id="compilerOutputContainer"></div>
+      </div>
+    </section>
+
+    <!-- VIEW 3: Global 16 Reference Sources Radar -->
+    <section id="view-sources" class="hidden">
+      <div class="spec-box" style="margin-bottom:1.25rem;">
+        <h2 style="font-size:1.05rem;color:var(--accent-gold-tint);margin-bottom:0.4rem;">🔍 新片场「高咖位导演版」量化过滤计算器 (过滤平庸流水账企业片)</h2>
+        <p style="font-size:0.84rem;color:var(--text-secondary);margin-bottom:0.75rem;">公式：<code>Score = (点赞数 + 1.5 × 收藏数) × 官方精选系数(1.3)</code> · 准入红线：收藏数 ≥ 1200 且 藏赞比 (Collect/Like) ≥ 1.8</p>
+        <div style="display:flex;flex-wrap:wrap;gap:0.8rem;align-items:center;">
+          <label style="font-size:0.82rem;">点赞数 Likes: <input type="number" id="calcLikes" class="form-input" value="1106" style="width:100px;" /></label>
+          <label style="font-size:0.82rem;">收藏数 Collects: <input type="number" id="calcCollects" class="form-input" value="3426" style="width:110px;" /></label>
+          <span id="calcVerdict" style="font-size:0.86rem;font-weight:700;"></span>
+        </div>
+      </div>
+      <div id="sourcesGrid" class="matrix-grid"></div>
+    </section>
+  </main>
+
+  <!-- 8-Dimensional Forensic Modal Dialog (light-dismiss enabled via closedby="any") -->
+  <dialog id="forensicDialog" class="forensic-dialog" closedby="any" aria-labelledby="dialogTitle">
+    <div id="dialogContent" class="dialog-body"></div>
+  </dialog>
+
+  <script src="data.js"></script>
+  <script src="data_auto_batches.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

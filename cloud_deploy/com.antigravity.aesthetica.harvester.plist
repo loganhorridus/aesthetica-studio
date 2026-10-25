@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.antigravity.aesthetica.harvester</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/python3</string>
+        <string>/Users/mengxiangyun/Desktop/vibe/anti/solution/AIPGC_Aesthetica_Studio_全栈审美数据库工作站/daily_aesthetica_harvester.py</string>
+        <string>--limit</string>
+        <string>50</string>
+        <string>--live-web</string>
+        <string>--auto-catchup</string>
+    </array>
+    <!-- RunAtLoad + StartCalendarInterval: If Mac is off/asleep at 02:00 AM, macOS automatically executes the missed job immediately upon next boot or lid-open wake! -->
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>2</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>/Users/mengxiangyun/Desktop/vibe/anti/solution/AIPGC_Aesthetica_Studio_全栈审美数据库工作站/harvester_launchd.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/mengxiangyun/Desktop/vibe/anti/solution/AIPGC_Aesthetica_Studio_全栈审美数据库工作站/harvester_launchd_err.log</string>
+</dict>
+</plist>

@@ -1,0 +1,40 @@
+name: AESTHETICA Cloud VM Harvester (150 Films/Day)
+
+on:
+  schedule:
+    # Runs at 18:00 UTC every day == 02:00 AM Beijing Time (Asia/Shanghai) on GitHub's 24/7 Cloud Ubuntu VM
+    - cron: '0 18 * * *'
+  workflow_dispatch:
+    inputs:
+      batch_size:
+        description: 'Number of films to harvest and deconstruct in this cloud VM run'
+        required: false
+        default: '150'
+
+jobs:
+  cloud-vm-harvest:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout AESTHETICA Studio Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Provision FFmpeg & yt-dlp on Cloud Ubuntu VM (4-Core / 16GB RAM)
+        run: |
+          sudo apt-get update && sudo apt-get install -y ffmpeg
+          pip install --upgrade yt-dlp
+
+      - name: Execute 8-Dimensional Aesthetic Harvest & Deconstruction (150 Films)
+        run: |
+          LIMIT="${{ github.event.inputs.batch_size || '150' }}"
+          python3 daily_aesthetica_harvester.py --limit "$LIMIT" --live-web --auto-catchup
+
+      - name: Commit & Push Updated Database to Cloud & Live Website
+        run: |
+          git config user.name "Aesthetica Cloud VM"
+          git config user.email "cloud-vm@aesthetica.studio"
+          git add data_auto_batches.js harvester_ledger.json assets/thumbs/
+          git diff --staged --quiet || (git commit -m "chore(cloud-vm): auto-harvest new aesthetic batch [skip ci]" && git push origin main)
