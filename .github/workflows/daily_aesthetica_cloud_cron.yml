@@ -7,9 +7,13 @@ on:
   workflow_dispatch:
     inputs:
       batch_size:
-        description: 'Number of films to harvest and deconstruct in this cloud VM run'
+        description: 'Number of new films to harvest and slice (6 keyframes/film)'
         required: false
         default: '150'
+      backfill_shots:
+        description: 'Number of existing films to upgrade to 6-frame storyboard'
+        required: false
+        default: '30'
 
 jobs:
   cloud-vm-harvest:
@@ -27,14 +31,15 @@ jobs:
           sudo apt-get update && sudo apt-get install -y ffmpeg
           pip install --upgrade yt-dlp
 
-      - name: Execute 8-Dimensional Aesthetic Harvest & Deconstruction (150 Films)
+      - name: Execute 8-Dimensional Aesthetic Harvest & 6-Frame Video Slicing
         run: |
           LIMIT="${{ github.event.inputs.batch_size || '150' }}"
-          python3 daily_aesthetica_harvester.py --limit "$LIMIT" --live-web --auto-catchup
+          BACKFILL="${{ github.event.inputs.backfill_shots || '30' }}"
+          python3 daily_aesthetica_harvester.py --limit "$LIMIT" --backfill-shots "$BACKFILL" --live-web --auto-catchup
 
       - name: Commit & Push Updated Database to Cloud & Live Website
         run: |
           git config user.name "Aesthetica Cloud VM"
           git config user.email "cloud-vm@aesthetica.studio"
           git add data_auto_batches.js harvester_ledger.json assets/thumbs/
-          git diff --staged --quiet || (git commit -m "chore(cloud-vm): auto-harvest new aesthetic batch [skip ci]" && git push origin main)
+          git diff --staged --quiet || (git commit -m "chore(cloud-vm): auto-harvest 6-shot storyboards & 8D aesthetic batch" && git push origin main)

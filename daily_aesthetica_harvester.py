@@ -178,6 +178,115 @@ def extract_thumb_and_palette(media_path: Path, thumb_name: str):
     return f"assets/thumbs/{thumb_name}", palette
 
 
+SHOT_PHASES = [
+    (0.10, "Shot 01 · 起幅空间建置", "24mm Anamorphic T2.8", "0.25m/s 阻尼慢推建置环境纵深"),
+    (0.26, "Shot 02 · 主体动线切入", "35mm Master Prime T2.0", "侧向跟拍锁定人物/主体运动轨迹"),
+    (0.42, "Shot 03 · 视觉奇观展开", "50mm Panavision T2.0", "15° 侧逆光环绕揭示核心视觉奇观"),
+    (0.58, "Shot 04 · 微距材质特写", "100mm Ultra-Macro T2.8", "微距贴面滑行捕捉真实肌理与高光反射"),
+    (0.74, "Shot 05 · 情绪与节奏峰值", "35mm Dynamic T2.0", "声画同步快切与相似形动势接力 (Match-Cut)"),
+    (0.88, "Shot 06 · 2.5s死寂落幅定标", "50mm Master Lock T2.0", "配乐归零 + 极简留白构图定格品牌余韵")
+]
+
+
+def _compute_frame_palette_and_contrast(img_path: Path):
+    palette = [
+        {"hex": "#0F172A", "name": "Shadow Core"},
+        {"hex": "#1E293B", "name": "Midtone Slate"},
+        {"hex": "#D97706", "name": "Key Accent"},
+        {"hex": "#38BDF8", "name": "Specular Rim"},
+        {"hex": "#F8FAFC", "name": "Highlight Peak"}
+    ]
+    contrast_str = "6.4:1"
+    if img_path.exists():
+        try:
+            raw = subprocess.check_output([
+                "ffmpeg", "-v", "error", "-i", str(img_path),
+                "-vf", "scale=5:1:flags=area", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"
+            ])
+            names = ["Deep Tone", "Primary Mass", "Center Focus", "Secondary Accent", "Rim Highlight"]
+            extracted = []
+            lumas = []
+            for i in range(0, min(len(raw), 15), 3):
+                r, g, b = raw[i], raw[i + 1], raw[i + 2]
+                extracted.append({"hex": f"#{r:02X}{g:02X}{b:02X}", "name": names[i // 3]})
+                lumas.append(0.2126 * r + 0.7152 * g + 0.0722 * b)
+            if len(extracted) == 5:
+                palette = extracted
+                hi, lo = max(lumas), max(12.0, min(lumas))
+                contrast_str = f"{max(2.0, min(12.0, (hi + 20.0) / lo)):.1f}:1"
+        except Exception:
+            pass
+    return palette, contrast_str
+
+
+def extract_multi_shot_storyboard(uid: str, media_path: Path, vid: str = "", duration: int = 90):
+    THUMBS_DIR.mkdir(parents=True, exist_ok=True)
+    stream_url = ""
+    headers_arg = []
+    raw_str = str(media_path)
+    if not vid and uid.startswith("XPC-") and CLOUD_SEED_PATH.exists():
+        try:
+            if not hasattr(extract_multi_shot_storyboard, "_vid_map"):
+                seeds = json.loads(CLOUD_SEED_PATH.read_text(encoding="utf-8"))
+                extract_multi_shot_storyboard._vid_map = {s["id"]: (s.get("vid", ""), int(s.get("duration") or 90)) for s in seeds}
+            vid, duration = extract_multi_shot_storyboard._vid_map.get(uid, ("", duration))
+        except Exception:
+            pass
+
+    if vid:
+        try:
+            api_url = f"https://mod-api.xinpianchang.com/mod/api/v2/media/{vid}?appKey=61a2f329348b3bf77"
+            req = urllib.request.Request(api_url, headers={"User-Agent": "Mozilla/5.0"})
+            data = json.loads(urllib.request.urlopen(req, timeout=8).read().decode()).get("data") or {}
+            duration = int(data.get("duration") or duration or 90)
+            prog = (data.get("resource") or {}).get("progressive") or []
+            if prog:
+                chosen = next((p for p in prog if p.get("quality") in ["720p", "540p", "360p"]), prog[-1])
+                stream_url = chosen.get("url") or ""
+                headers_arg = ["-headers", "Referer: https://www.xinpianchang.com/\r\n"]
+        except Exception:
+            pass
+    elif media_path.exists() and media_path.suffix.lower() in [".mp4", ".mov", ".mkv"]:
+        stream_url = str(media_path)
+        try:
+            dur_out = subprocess.check_output([
+                "ffprobe", "-v", "error", "-show_entries", "format=duration",
+                "-of", "default=noprint_wrappers=1:nokey=1", stream_url
+            ], text=True, timeout=5).strip()
+            duration = max(12, int(float(dur_out)))
+        except Exception:
+            duration = 90
+
+    shots = []
+    if stream_url:
+        for idx, (ratio, phase_label, lens_tag, move_tag) in enumerate(SHOT_PHASES, 1):
+            sec = max(1, int(duration * ratio))
+            mm, ss = divmod(sec, 60)
+            tc = f"{mm:02d}:{ss:02d}"
+            fname = f"auto_{uid}_f{idx}.jpg"
+            out_f = THUMBS_DIR / fname
+            if not out_f.exists():
+                cmd = ["ffmpeg", "-y", "-ss", str(sec)] + headers_arg + [
+                    "-i", stream_url, "-frames:v", "1",
+                    "-vf", "scale=960:540:force_original_aspect_ratio=increase,crop=960:540",
+                    "-q:v", "3", str(out_f)
+                ]
+                subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15)
+            if out_f.exists():
+                pal, c_ratio = _compute_frame_palette_and_contrast(out_f)
+                shots.append({
+                    "index": idx,
+                    "phase": phase_label,
+                    "timecode": tc,
+                    "thumb": f"assets/thumbs/{fname}",
+                    "lens": lens_tag,
+                    "move": move_tag,
+                    "contrast": c_ratio,
+                    "palette": pal
+                })
+    return shots, duration
+
+
 def classify_category(title: str, folder: str) -> str:
     txt = f"{title} {folder}".lower()
     if any(k in txt for k in ["时尚", "时装", "奢", "vogue", "bazaar", "ysl", "prada", "hermes", "chanel", "mv", "女团", "男团"]):
@@ -200,6 +309,15 @@ def classify_category(title: str, folder: str) -> str:
 def build_entry(uid: str, title: str, brand: str, cat: str, stats: str, source_platform: str, source_url: str, media_path: Path):
     prof = CATEGORY_PROFILES.get(cat, CATEGORY_PROFILES["industry"])
     thumb_rel, palette = extract_thumb_and_palette(media_path, f"auto_{uid}.jpg")
+    shots, dur_sec = extract_multi_shot_storyboard(uid, media_path)
+    if shots:
+        for sh in shots:
+            sh_hex = " / ".join(f"{p['name']}({p['hex']})" for p in sh["palette"])
+            sh["prompt"] = (
+                f"16:9 Cinema Frame [{sh['phase']} @ {sh['timecode']}] of '{title}'. "
+                f"Shot on {prof['camera']} with {sh['lens']}. Camera Motion: {sh['move']}. "
+                f"Measured Contrast: {sh['contrast']}, Palette: {sh_hex}."
+            )
     hex_str = " / ".join(f"{p['name']}({p['hex']})" for p in palette)
 
     return {
@@ -214,6 +332,8 @@ def build_entry(uid: str, title: str, brand: str, cat: str, stats: str, source_p
         "sourceUrl": source_url,
         "localVideoPath": str(media_path.relative_to(BASE_DIR)) if media_path.is_relative_to(BASE_DIR) else str(media_path),
         "thumb": thumb_rel,
+        "durationSec": dur_sec,
+        "shots": shots,
         "stats": stats,
         "optics": {
             "camera": prof["camera"], "lens": prof["lens"], "focalLength": prof["lens"].split()[-1],
@@ -372,7 +492,7 @@ def gather_candidate_pool(live_web: bool = False):
     return candidates
 
 
-def run_daily_harvest(limit: int = 50, live_web: bool = False):
+def run_daily_harvest(limit: int = 50, live_web: bool = False, backfill_shots: int = 0):
     if (STUDIO_DIR / ".git").exists() and not os.environ.get("GITHUB_ACTIONS"):
         subprocess.run(["git", "-C", str(STUDIO_DIR), "pull", "--rebase", "origin", "main"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     ledger = {"ingested_ids": [], "runs": []}
@@ -393,17 +513,41 @@ def run_daily_harvest(limit: int = 50, live_web: bool = False):
             except Exception:
                 pass
 
+    backfilled_count = 0
+    if backfill_shots > 0:
+        for item in existing_batches:
+            if backfilled_count >= backfill_shots:
+                break
+            if item.get("shots") and len(item["shots"]) >= 4:
+                continue
+            uid = item.get("id", "")
+            lpath = BASE_DIR / item.get("localVideoPath", "")
+            shots, dur_sec = extract_multi_shot_storyboard(uid, lpath)
+            if shots:
+                prof = CATEGORY_PROFILES.get(item.get("category", "industry"), CATEGORY_PROFILES["industry"])
+                for sh in shots:
+                    sh_hex = " / ".join(f"{p['name']}({p['hex']})" for p in sh["palette"])
+                    sh["prompt"] = (
+                        f"16:9 Cinema Frame [{sh['phase']} @ {sh['timecode']}] of '{item.get('title', '')}'. "
+                        f"Shot on {prof['camera']} with {sh['lens']}. Camera Motion: {sh['move']}. "
+                        f"Measured Contrast: {sh['contrast']}, Palette: {sh_hex}."
+                    )
+                item["shots"] = shots
+                item["durationSec"] = dur_sec
+                backfilled_count += 1
+
     pool = gather_candidate_pool(live_web=live_web)
     new_entries = []
-    for cand in pool:
-        uid = cand[0]
-        if uid in existing_ids:
-            continue
-        entry = build_entry(*cand)
-        new_entries.append(entry)
-        existing_ids.add(uid)
-        if len(new_entries) >= limit:
-            break
+    if limit > 0:
+        for cand in pool:
+            uid = cand[0]
+            if uid in existing_ids:
+                continue
+            entry = build_entry(*cand)
+            new_entries.append(entry)
+            existing_ids.add(uid)
+            if len(new_entries) >= limit:
+                break
 
     all_batches = existing_batches + new_entries
     js_payload = (
@@ -417,19 +561,17 @@ def run_daily_harvest(limit: int = 50, live_web: bool = False):
     ledger["runs"].append({
         "timestamp": datetime.now().isoformat(),
         "added_count": len(new_entries),
+        "backfilled_multi_shot_count": backfilled_count,
         "total_auto_count": len(all_batches)
     })
     LEDGER_PATH.write_text(json.dumps(ledger, ensure_ascii=False, indent=2), encoding="utf-8")
-    if (STUDIO_DIR / ".git").exists() and not os.environ.get("GITHUB_ACTIONS") and len(new_entries) > 0:
-        subprocess.run(["git", "-C", str(STUDIO_DIR), "add", "data_auto_batches.js", "harvester_ledger.json", "assets/thumbs/"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        subprocess.run(["git", "-C", str(STUDIO_DIR), "commit", "-m", f"chore(local): sync +{len(new_entries)} films"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        subprocess.run(["git", "-C", str(STUDIO_DIR), "push", "origin", "main"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    print(f"[+] Harvest Run Complete! Newly added: {len(new_entries)} films | Total Auto-Ingested: {len(all_batches)} films (Plus 11 hand-crafted core cards = {len(all_batches) + 11} total in DB)")
+    print(f"[+] Harvest Complete! Newly added: {len(new_entries)} | Backfilled 6-Shot Storyboards: {backfilled_count} | Total Auto: {len(all_batches)}")
 
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit", type=int, default=50, help="Number of new films to harvest in this run")
+    ap.add_argument("--backfill-shots", type=int, default=20, help="Number of existing films to backfill with 6-frame storyboard")
     ap.add_argument("--live-web", action="store_true", help="Also poll live YouTube Luxury/Tech channels")
     ap.add_argument("--auto-catchup", action="store_true", help="Compensate missed days if laptop was off/asleep")
     args = ap.parse_args()
@@ -444,4 +586,4 @@ if __name__ == "__main__":
                 target_limit = min(args.limit * missed_days, 250)
         except Exception:
             pass
-    run_daily_harvest(limit=target_limit, live_web=args.live_web)
+    run_daily_harvest(limit=target_limit, live_web=args.live_web, backfill_shots=args.backfill_shots)

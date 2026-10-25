@@ -52,23 +52,44 @@
 
   function renderMatrix() {
     const items = filterItems();
-    resultCount.textContent = `当前命中 ${items.length} / ${db.length} 部殿堂级母片标杆（点击色块直接复制 HEX，点击卡片展开八维拆解与 AIGC 载荷）`;
+    const multiShotCount = db.filter((x) => x.shots && x.shots.length > 1).length;
+    resultCount.textContent = `当前命中 ${items.length} / ${db.length} 部殿堂级母片标杆（其中 ${multiShotCount} 部已完成 6 帧全时轴逐镜切片 · 悬停小图可预览分镜，点击卡片展开八维拆解）`;
 
     matrixGrid.innerHTML = items.map((item) => {
       const swatches = item.palette.map((p) =>
         `<div class="swatch-chip" style="background:${p.hex};" title="${p.name}: 点击复制 ${p.hex}" onclick="event.stopPropagation();window.copyText('${p.hex}', this)">${p.hex}</div>`
       ).join("");
 
+      const hasShots = item.shots && item.shots.length > 1;
+      const shotBadge = hasShots
+        ? `<span class="badge" style="background:rgba(16,185,129,0.22);border-color:var(--accent-emerald);color:#6ee7b7;">🎞️ ${item.shots.length}帧逐镜拉片</span>`
+        : "";
+      const miniStrip = hasShots
+        ? `<div style="display:grid;grid-template-columns:repeat(${item.shots.length},1fr);gap:2px;padding:3px;background:#060911;border-bottom:1px solid var(--border-subtle);">
+            ${item.shots.map((sh) => `
+              <div style="position:relative;aspect-ratio:16/9;overflow:hidden;border-radius:3px;cursor:pointer;"
+                   title="${sh.phase} (${sh.timecode}) · ${sh.lens} · 反差 ${sh.contrast}"
+                   onmouseenter="this.closest('.aesthetic-card').querySelector('.main-card-img').src='${sh.thumb}'"
+                   onmouseleave="this.closest('.aesthetic-card').querySelector('.main-card-img').src='${item.thumb}'">
+                <img src="${sh.thumb}" alt="${sh.phase}" loading="lazy" style="width:100%;height:100%;object-fit:cover;display:block;" />
+                <span style="position:absolute;bottom:1px;right:2px;font-size:9px;background:rgba(0,0,0,0.75);color:#fff;padding:0 3px;border-radius:2px;">${sh.timecode}</span>
+              </div>
+            `).join("")}
+          </div>`
+        : "";
+
       return `
         <div class="card-container">
           <article class="aesthetic-card" onclick="window.openForensicModal('${item.id}')">
             <div class="card-thumb-wrap">
-              <img src="${item.thumb}" alt="${item.title}" loading="lazy" />
+              <img class="main-card-img" src="${item.thumb}" alt="${item.title}" loading="lazy" />
               <div class="card-badges">
                 <span class="badge badge-gold">🏷️ ${item.categoryLabel}</span>
                 <span class="badge">🥁 ${item.editing.bpm} BPM · ${item.editing.avgShotLength}/镜</span>
+                ${shotBadge}
               </div>
             </div>
+            ${miniStrip}
             <div class="palette-strip" aria-label="核心5色HEX色板">${swatches}</div>
             <div class="card-body">
               <div style="font-size:0.74rem;color:var(--accent-cyan);font-weight:600;">${item.brand} · ${item.stats}</div>
@@ -81,7 +102,7 @@
               </div>
               <div style="display:flex;justify-content:space-between;align-items:center;margin-top:auto;padding-top:0.4rem;">
                 <span style="font-size:0.75rem;color:var(--text-muted);">母题：${item.rhetoric.motif}</span>
-                <span class="btn-copy">🔬 展开八维拆解 & Prompt</span>
+                <span class="btn-copy">🔬 展开逐镜分镜 & 八维拆解</span>
               </div>
             </div>
           </article>
@@ -90,11 +111,70 @@
     }).join("");
   }
 
+  window.selectModalShot = function (itemId, shotIdx) {
+    const item = db.find((x) => x.id === itemId);
+    if (!item || !item.shots) return;
+    const sh = item.shots.find((s) => s.index === shotIdx) || item.shots[0];
+    const heroImg = document.getElementById("modalShotHeroImg");
+    const metaEl = document.getElementById("modalShotMeta");
+    const promptEl = document.getElementById("modalShotPrompt");
+    if (heroImg) heroImg.src = sh.thumb;
+    if (metaEl) {
+      metaEl.innerHTML = `<strong>${sh.phase}</strong> · 时间码 <span style="color:var(--accent-cyan);">${sh.timecode}</span> · 焦段 <span style="color:var(--accent-gold-tint);">${sh.lens}</span> · 实测反差 <span style="color:var(--accent-emerald);">${sh.contrast}</span> · 调度：${sh.move}`;
+    }
+    if (promptEl) promptEl.textContent = sh.prompt || item.aigcPayloads.keyframePrompt;
+  };
+
   window.openForensicModal = function (id) {
     const item = db.find((x) => x.id === id);
     if (!item) return;
     const voJson = JSON.stringify(item.audio.elevenLabsVO, null, 2);
     const sfxJson = JSON.stringify(item.audio.elevenLabsSFX, null, 2);
+    const hasShots = item.shots && item.shots.length > 0;
+    const firstShot = hasShots ? item.shots[0] : null;
+    const storyboardSection = hasShots ? `
+      <div class="spec-box" style="border-color:rgba(16,185,129,0.35);">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.65rem;">
+          <h3 style="font-size:0.96rem;color:var(--accent-emerald);">🎞️ 全时轴 ${item.shots.length} 帧逐镜拉片分镜台 (HTTP-Range 真实视频流切片 · 点击任意分镜切换单镜参数与 Prompt)</h3>
+          <span style="font-size:0.78rem;color:var(--text-secondary);">全片时长：${item.durationSec || 90}s</span>
+        </div>
+        <div style="display:grid;grid-template-columns:1.25fr 1.75fr;gap:0.9rem;align-items:start;">
+          <div style="border-radius:8px;overflow:hidden;border:1px solid var(--border-subtle);background:#05070c;">
+            <img id="modalShotHeroImg" src="${firstShot.thumb}" alt="${firstShot.phase}" style="width:100%;aspect-ratio:16/9;object-fit:cover;display:block;" />
+            <div id="modalShotMeta" style="padding:0.55rem 0.7rem;font-size:0.78rem;color:var(--text-primary);border-top:1px solid var(--border-subtle);">
+              <strong>${firstShot.phase}</strong> · 时间码 <span style="color:var(--accent-cyan);">${firstShot.timecode}</span> · 焦段 <span style="color:var(--accent-gold-tint);">${firstShot.lens}</span> · 实测反差 <span style="color:var(--accent-emerald);">${firstShot.contrast}</span> · 调度：${firstShot.move}
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:0.6rem;">
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.5rem;">
+              ${item.shots.map((sh) => `
+                <div onclick="window.selectModalShot('${item.id}', ${sh.index})"
+                     style="cursor:pointer;border:1px solid var(--border-subtle);border-radius:6px;overflow:hidden;background:#090d16;transition:transform 0.15s;"
+                     onmouseenter="this.style.borderColor='var(--accent-cyan)'"
+                     onmouseleave="this.style.borderColor='var(--border-subtle)'">
+                  <div style="position:relative;aspect-ratio:16/9;">
+                    <img src="${sh.thumb}" alt="${sh.phase}" style="width:100%;height:100%;object-fit:cover;display:block;" />
+                    <span style="position:absolute;top:3px;left:4px;font-size:10px;background:rgba(0,0,0,0.78);color:var(--accent-gold-tint);padding:1px 4px;border-radius:3px;">#${sh.index} · ${sh.timecode}</span>
+                    <span style="position:absolute;bottom:3px;right:4px;font-size:10px;background:rgba(0,0,0,0.78);color:#6ee7b7;padding:1px 4px;border-radius:3px;">${sh.contrast}</span>
+                  </div>
+                  <div style="display:grid;grid-template-columns:repeat(5,1fr);height:6px;">
+                    ${sh.palette.map((p) => `<span style="background:${p.hex};"></span>`).join("")}
+                  </div>
+                  <div style="padding:3px 5px;font-size:10px;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${sh.phase.replace(/^Shot \d+ · /, '')}</div>
+                </div>
+              `).join("")}
+            </div>
+            <div>
+              <div style="display:flex;justify-content:space-between;align-items:center;">
+                <span style="font-size:0.78rem;color:var(--accent-cyan);font-weight:600;">🎯 当前选中分镜单帧复刻 Prompt：</span>
+                <button type="button" class="btn-copy" onclick="window.copyText(document.getElementById('modalShotPrompt').textContent, this)">📋 复制该分镜 Prompt</button>
+              </div>
+              <pre id="modalShotPrompt" class="code-block" style="margin-top:0.3rem;">${firstShot.prompt || item.aigcPayloads.keyframePrompt}</pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    ` : "";
 
     dialogContent.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;border-bottom:1px solid var(--border-subtle);padding-bottom:0.9rem;">
@@ -108,6 +188,8 @@
           <button type="button" class="btn-copy" onclick="document.getElementById('forensicDialog').close()">✕ 关闭 (Esc)</button>
         </div>
       </div>
+
+      ${storyboardSection}
 
       <div class="spec-grid">
         <div class="spec-box">
