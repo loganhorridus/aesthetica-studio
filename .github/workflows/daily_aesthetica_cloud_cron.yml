@@ -26,15 +26,15 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Provision FFmpeg & yt-dlp on Cloud Ubuntu VM (4-Core / 16GB RAM)
+      - name: Provision FFmpeg, Pillow & yt-dlp on Cloud Ubuntu VM (4-Core / 16GB RAM)
         run: |
           sudo apt-get update && sudo apt-get install -y ffmpeg
-          pip install --upgrade yt-dlp
+          pip install --upgrade yt-dlp Pillow
 
-      - name: Execute 8-Dimensional Aesthetic Harvest & 6-Frame Video Slicing
+      - name: Execute V3.0 Adaptive Scene-Cut & Sub-Second Montage Burst Harvest
         run: |
           LIMIT="${{ github.event.inputs.batch_size || '150' }}"
-          BACKFILL="${{ github.event.inputs.backfill_shots || '30' }}"
+          BACKFILL="${{ github.event.inputs.backfill_shots || '35' }}"
           python3 daily_aesthetica_harvester.py --limit "$LIMIT" --backfill-shots "$BACKFILL" --live-web --auto-catchup
 
       - name: Commit & Push Updated Database to Cloud & Live Website
@@ -42,4 +42,4 @@ jobs:
           git config user.name "Aesthetica Cloud VM"
           git config user.email "cloud-vm@aesthetica.studio"
           git add data_auto_batches.js harvester_ledger.json assets/thumbs/
-          git diff --staged --quiet || (git commit -m "chore(cloud-vm): auto-harvest 6-shot storyboards & 8D aesthetic batch" && git push origin main)
+          git diff --staged --quiet || (git commit -m "chore(cloud-vm): V3.0 adaptive scene-cut & rhythm ECG harvest" && git push origin main)

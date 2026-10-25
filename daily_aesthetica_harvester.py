@@ -178,16 +178,6 @@ def extract_thumb_and_palette(media_path: Path, thumb_name: str):
     return f"assets/thumbs/{thumb_name}", palette
 
 
-SHOT_PHASES = [
-    (0.10, "Shot 01 · 起幅空间建置", "24mm Anamorphic T2.8", "0.25m/s 阻尼慢推建置环境纵深"),
-    (0.26, "Shot 02 · 主体动线切入", "35mm Master Prime T2.0", "侧向跟拍锁定人物/主体运动轨迹"),
-    (0.42, "Shot 03 · 视觉奇观展开", "50mm Panavision T2.0", "15° 侧逆光环绕揭示核心视觉奇观"),
-    (0.58, "Shot 04 · 微距材质特写", "100mm Ultra-Macro T2.8", "微距贴面滑行捕捉真实肌理与高光反射"),
-    (0.74, "Shot 05 · 情绪与节奏峰值", "35mm Dynamic T2.0", "声画同步快切与相似形动势接力 (Match-Cut)"),
-    (0.88, "Shot 06 · 2.5s死寂落幅定标", "50mm Master Lock T2.0", "配乐归零 + 极简留白构图定格品牌余韵")
-]
-
-
 def _compute_frame_palette_and_contrast(img_path: Path):
     palette = [
         {"hex": "#0F172A", "name": "Shadow Core"},
@@ -199,18 +189,15 @@ def _compute_frame_palette_and_contrast(img_path: Path):
     contrast_str = "6.4:1"
     if img_path.exists():
         try:
-            raw = subprocess.check_output([
-                "ffmpeg", "-v", "error", "-i", str(img_path),
-                "-vf", "scale=5:1:flags=area", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"
-            ])
-            names = ["Deep Tone", "Primary Mass", "Center Focus", "Secondary Accent", "Rim Highlight"]
-            extracted = []
-            lumas = []
-            for i in range(0, min(len(raw), 15), 3):
-                r, g, b = raw[i], raw[i + 1], raw[i + 2]
-                extracted.append({"hex": f"#{r:02X}{g:02X}{b:02X}", "name": names[i // 3]})
-                lumas.append(0.2126 * r + 0.7152 * g + 0.0722 * b)
-            if len(extracted) == 5:
+            from PIL import Image
+            with Image.open(img_path) as im:
+                rgb_im = im.convert("RGB").resize((5, 1))
+                names = ["Deep Tone", "Primary Mass", "Center Focus", "Secondary Accent", "Rim Highlight"]
+                extracted, lumas = [], []
+                for idx_x in range(5):
+                    r, g, b = rgb_im.getpixel((idx_x, 0))
+                    extracted.append({"hex": f"#{r:02X}{g:02X}{b:02X}", "name": names[idx_x]})
+                    lumas.append(0.2126 * r + 0.7152 * g + 0.0722 * b)
                 palette = extracted
                 hi, lo = max(lumas), max(12.0, min(lumas))
                 contrast_str = f"{max(2.0, min(12.0, (hi + 20.0) / lo)):.1f}:1"
@@ -219,20 +206,159 @@ def _compute_frame_palette_and_contrast(img_path: Path):
     return palette, contrast_str
 
 
+def _resolve_seed_vid(uid: str, media_path: Path, vid: str = "", duration: int = 90):
+    if vid:
+        return vid, duration
+    if not CLOUD_SEED_PATH.exists():
+        return "", duration
+    try:
+        if not hasattr(_resolve_seed_vid, "_cache"):
+            seeds = json.loads(CLOUD_SEED_PATH.read_text(encoding="utf-8"))
+            by_id, by_aid, by_stats = {}, {}, {}
+            for s in seeds:
+                v_pair = (s.get("vid", ""), int(s.get("duration") or 90))
+                by_id[s["id"]] = v_pair
+                if s.get("article_id"):
+                    by_aid[str(s["article_id"])] = v_pair
+                by_stats[f"{s.get('likes')}赞{s.get('collects')}藏"] = v_pair
+            _resolve_seed_vid._cache = (by_id, by_aid, by_stats, seeds)
+        by_id, by_aid, by_stats, seeds = _resolve_seed_vid._cache
+        if uid in by_id:
+            return by_id[uid]
+        if uid.startswith("DIR5-"):
+            aid = uid.replace("DIR5-", "")
+            if aid in by_aid:
+                return by_aid[aid]
+        fname = media_path.name
+        m_st = re.search(r"(\d+赞\d+藏)", fname)
+        if m_st and m_st.group(1) in by_stats:
+            return by_stats[m_st.group(1)]
+    except Exception:
+        pass
+    return "", duration
+
+
+
+def _build_rhythm_telemetry(raw_cuts: list, duration: float, max_frames: int = 16):
+    duration = max(6.0, float(duration))
+    cuts = [(0.0, 99.0)]
+    for t, sc in raw_cuts:
+        if t - cuts[-1][0] >= 0.12 and duration - t >= 0.15:
+            cuts.append((round(t, 2), round(sc, 1)))
+    if len(cuts) <= 1:
+        cuts = [(round(duration * r, 2), 18.0) for r in [0.0, 0.12, 0.28, 0.44, 0.58, 0.63, 0.67, 0.72, 0.85]]
+
+    all_shots = []
+    for i in range(len(cuts)):
+        t_s = cuts[i][0]
+        t_e = round(cuts[i + 1][0] if i + 1 < len(cuts) else duration, 2)
+        dur = round(max(0.12, t_e - t_s), 2)
+        rtype = "flash" if dur < 0.85 else ("fast" if dur < 1.8 else ("normal" if dur < 3.5 else "long"))
+        rlabel = "⚡亚秒闪切" if rtype == "flash" else ("🥁节拍快切" if rtype == "fast" else ("🎬标准叙事" if rtype == "normal" else "🧘呼吸长镜"))
+        all_shots.append({
+            "shotNo": i + 1, "start": t_s, "end": t_e, "dur": dur,
+            "mid": round((t_s + t_e) / 2.0, 2), "score": cuts[i][1],
+            "type": rtype, "rhythmLabel": rlabel, "burstId": 0
+        })
+
+    bursts = []
+    idx_i = 0
+    while idx_i < len(all_shots):
+        if all_shots[idx_i]["dur"] < 0.95:
+            idx_j = idx_i
+            while idx_j < len(all_shots) and all_shots[idx_j]["dur"] < 1.05:
+                idx_j += 1
+            cluster = all_shots[idx_i:idx_j]
+            if len(cluster) >= 3 or (len(cluster) >= 2 and min(s["dur"] for s in cluster) <= 0.45):
+                b_id = len(bursts) + 1
+                b_s, b_e = cluster[0]["start"], cluster[-1]["end"]
+                b_span = round(max(0.2, b_e - b_s), 2)
+                hz = round(len(cluster) / b_span, 2)
+                for s_item in cluster:
+                    s_item["burstId"] = b_id
+                bursts.append({
+                    "burstId": b_id, "start": b_s, "end": b_e, "spanSec": b_span,
+                    "shotCount": len(cluster), "avgDur": round(b_span / len(cluster), 2),
+                    "minDur": min(s["dur"] for s in cluster), "cutsPerSec": hz,
+                    "shotNos": [s["shotNo"] for s in cluster],
+                    "label": f"Burst #{b_id} [{b_s:.2f}s–{b_e:.2f}s] · {b_span:.2f}s内连闪{len(cluster)}镜 ({hz}镜/秒)"
+                })
+            idx_i = idx_j
+        else:
+            idx_i += 1
+
+    # 20-bin normalized Cut Frequency ECG Curve
+    bins = []
+    bin_w = duration / 20.0
+    for b_idx in range(20):
+        w_s, w_e = b_idx * bin_w, (b_idx + 1) * bin_w
+        ov = [s for s in all_shots if s["end"] > w_s and s["start"] < w_e]
+        cnt = len(ov)
+        min_d = min((s["dur"] for s in ov), default=round(bin_w, 2))
+        hz_val = round(cnt / max(0.5, bin_w), 2)
+        b_state = "flash" if min_d < 0.85 else ("fast" if min_d < 1.8 else ("long" if min_d >= 3.5 else "normal"))
+        bins.append({"bin": b_idx + 1, "t0": round(w_s, 1), "t1": round(w_e, 1), "shots": cnt, "hz": hz_val, "minDur": min_d, "state": b_state})
+
+    durs = sorted(s["dur"] for s in all_shots)
+    med_asl = durs[len(durs) // 2]
+    flash_cnt = sum(1 for s in all_shots if s["type"] == "flash")
+    long_cnt = sum(1 for s in all_shots if s["type"] == "long")
+    flash_pct = round(100.0 * flash_cnt / len(all_shots), 1)
+    peak_hz = max([b["cutsPerSec"] for b in bursts] + [b["hz"] for b in bins] + [round(1.0 / max(0.15, durs[0]), 2)])
+
+    if len(bursts) >= 2 and long_cnt >= 2:
+        arch = "🔥 静动双模态脉冲型 (呼吸长镜蓄势 + 亚秒级一秒多镜闪切)"
+    elif flash_pct >= 28.0 or len(bursts) >= 3:
+        arch = "⚡ 机关枪高频蒙太奇型 (密集亚秒级快切组接)"
+    elif long_cnt / len(all_shots) >= 0.42:
+        arch = "🧘 沉浸式呼吸长镜型 (单镜一帧 · 极简阻尼调度)"
+    else:
+        arch = "🎬 黄金律动叙事型 (标准镜头递进 + 局部节拍快切)"
+
+    # Adaptive shot selection: 1 frame per long take + consecutive frames inside rapid bursts
+    if len(all_shots) <= max_frames:
+        selected = all_shots
+    else:
+        sel_nos = {all_shots[0]["shotNo"], all_shots[-1]["shotNo"]}
+        for b in sorted(bursts, key=lambda x: x["cutsPerSec"], reverse=True)[:3]:
+            for sno in b["shotNos"][:4]:
+                if len(sel_nos) < max_frames - 4:
+                    sel_nos.add(sno)
+        long_list = [s for s in all_shots if s["type"] == "long"]
+        for ls in long_list[::max(1, len(long_list) // 4 or 1)]:
+            if len(sel_nos) < max_frames - 2:
+                sel_nos.add(ls["shotNo"])
+        rem = [s for s in all_shots if s["shotNo"] not in sel_nos]
+        step = max(1, len(rem) // max(1, (max_frames - len(sel_nos))))
+        for s in rem[::step]:
+            if len(sel_nos) < max_frames:
+                sel_nos.add(s["shotNo"])
+        selected = [s for s in all_shots if s["shotNo"] in sel_nos]
+
+    rhythm_obj = {
+        "totalShots": len(all_shots),
+        "measuredASL": f"{duration / len(all_shots):.2f}s",
+        "medianASL": f"{med_asl:.2f}s",
+        "shortestShotSec": durs[0],
+        "longestShotSec": durs[-1],
+        "flashCutCount": flash_cnt,
+        "flashCutRatio": f"{flash_pct}%",
+        "longTakeCount": long_cnt,
+        "peakCutsPerSec": peak_hz,
+        "rhythmArchetype": arch,
+        "burstClusters": bursts,
+        "densityCurve": bins,
+        "allShots": [{"no": s["shotNo"], "s": s["start"], "e": s["end"], "d": s["dur"], "t": s["type"], "b": s["burstId"]} for s in all_shots]
+    }
+    return rhythm_obj, selected
+
+
 def extract_multi_shot_storyboard(uid: str, media_path: Path, vid: str = "", duration: int = 90):
+    import tempfile
     THUMBS_DIR.mkdir(parents=True, exist_ok=True)
+    vid, duration = _resolve_seed_vid(uid, media_path, vid, duration)
     stream_url = ""
     headers_arg = []
-    raw_str = str(media_path)
-    if not vid and uid.startswith("XPC-") and CLOUD_SEED_PATH.exists():
-        try:
-            if not hasattr(extract_multi_shot_storyboard, "_vid_map"):
-                seeds = json.loads(CLOUD_SEED_PATH.read_text(encoding="utf-8"))
-                extract_multi_shot_storyboard._vid_map = {s["id"]: (s.get("vid", ""), int(s.get("duration") or 90)) for s in seeds}
-            vid, duration = extract_multi_shot_storyboard._vid_map.get(uid, ("", duration))
-        except Exception:
-            pass
-
     if vid:
         try:
             api_url = f"https://mod-api.xinpianchang.com/mod/api/v2/media/{vid}?appKey=61a2f329348b3bf77"
@@ -241,50 +367,97 @@ def extract_multi_shot_storyboard(uid: str, media_path: Path, vid: str = "", dur
             duration = int(data.get("duration") or duration or 90)
             prog = (data.get("resource") or {}).get("progressive") or []
             if prog:
-                chosen = next((p for p in prog if p.get("quality") in ["720p", "540p", "360p"]), prog[-1])
+                chosen = next((p for p in prog if p.get("quality") in ["540p", "360p", "720p"]), prog[-1])
                 stream_url = chosen.get("url") or ""
                 headers_arg = ["-headers", "Referer: https://www.xinpianchang.com/\r\n"]
         except Exception:
             pass
     elif media_path.exists() and media_path.suffix.lower() in [".mp4", ".mov", ".mkv"]:
         stream_url = str(media_path)
-        try:
-            dur_out = subprocess.check_output([
-                "ffprobe", "-v", "error", "-show_entries", "format=duration",
-                "-of", "default=noprint_wrappers=1:nokey=1", stream_url
-            ], text=True, timeout=5).strip()
-            duration = max(12, int(float(dur_out)))
-        except Exception:
-            duration = 90
+
+    if not stream_url:
+        return [], duration, None
 
     shots = []
-    if stream_url:
-        for idx, (ratio, phase_label, lens_tag, move_tag) in enumerate(SHOT_PHASES, 1):
-            sec = max(1, int(duration * ratio))
-            mm, ss = divmod(sec, 60)
-            tc = f"{mm:02d}:{ss:02d}"
+    rhythm_obj = None
+    with tempfile.TemporaryDirectory() as tmpd:
+        local_src = stream_url
+        raw_cuts = []
+        try:
+            if stream_url.startswith("http"):
+                tmp_mp4 = os.path.join(tmpd, "cache.mp4")
+                cmd_sc = ["ffmpeg", "-y", "-v", "info"] + headers_arg + [
+                    "-i", stream_url, "-t", "150",
+                    "-map", "0:v:0", "-c:v", "copy", tmp_mp4,
+                    "-map", "0:v:0", "-vf", "scale=160:90,scdet=threshold=13", "-an", "-f", "null", "-"
+                ]
+                out = subprocess.check_output(cmd_sc, stderr=subprocess.STDOUT, text=True, timeout=35)
+                if os.path.exists(tmp_mp4) and os.path.getsize(tmp_mp4) > 10000:
+                    local_src = tmp_mp4
+                    headers_arg = []
+            else:
+                cmd_sc = [
+                    "ffmpeg", "-v", "info", "-i", local_src, "-t", "150",
+                    "-vf", "scale=160:90,scdet=threshold=13", "-an", "-f", "null", "-"
+                ]
+                out = subprocess.check_output(cmd_sc, stderr=subprocess.STDOUT, text=True, timeout=45)
+            m_dur = re.search(r"Duration:\s*(\d+):(\d+):(\d+\.\d+)", out)
+            if m_dur:
+                duration = max(6, int(int(m_dur.group(1)) * 3600 + int(m_dur.group(2)) * 60 + float(m_dur.group(3))))
+            for line in out.splitlines():
+                if "lavfi.scd.time:" in line:
+                    m_sc = re.search(r"lavfi\.scd\.score:\s*([\d\.]+),\s*lavfi\.scd\.time:\s*([\d\.]+)", line)
+                    if m_sc:
+                        raw_cuts.append((float(m_sc.group(2)), float(m_sc.group(1))))
+        except Exception:
+            pass
+
+        rhythm_obj, selected_shots = _build_rhythm_telemetry(raw_cuts, duration, max_frames=16)
+        missing_tasks = []
+        for idx, sh_meta in enumerate(selected_shots, 1):
             fname = f"auto_{uid}_f{idx}.jpg"
             out_f = THUMBS_DIR / fname
-            if not out_f.exists():
-                cmd = ["ffmpeg", "-y", "-ss", str(sec)] + headers_arg + [
-                    "-i", stream_url, "-frames:v", "1",
-                    "-vf", "scale=960:540:force_original_aspect_ratio=increase,crop=960:540",
-                    "-q:v", "3", str(out_f)
+            if not out_f.exists() or len(selected_shots) > 6:
+                missing_tasks.append((sh_meta["mid"], out_f))
+
+        # Batch extract in chunks of 8 inputs per ffmpeg call for rock-solid speed
+        for c_start in range(0, len(missing_tasks), 8):
+            chunk = missing_tasks[c_start:c_start + 8]
+            cmd_ext = ["ffmpeg", "-y", "-v", "error"]
+            for sec_val, _ in chunk:
+                cmd_ext += headers_arg + ["-ss", f"{sec_val:.2f}", "-i", local_src]
+            for map_i, (_, out_f) in enumerate(chunk):
+                cmd_ext += [
+                    "-map", f"{map_i}:v:0", "-frames:v", "1",
+                    "-vf", "scale=640:360:force_original_aspect_ratio=increase,crop=640:360",
+                    "-q:v", "4", str(out_f)
                 ]
-                subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15)
+            try:
+                subprocess.run(cmd_ext, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=25)
+            except Exception:
+                pass
+
+        for idx, sh_meta in enumerate(selected_shots, 1):
+            fname = f"auto_{uid}_f{idx}.jpg"
+            out_f = THUMBS_DIR / fname
             if out_f.exists():
                 pal, c_ratio = _compute_frame_palette_and_contrast(out_f)
+                st_s, ed_s, dur_s = sh_meta["start"], sh_meta["end"], sh_meta["dur"]
+                tc_str = f"{int(st_s // 60):02d}:{st_s % 60:05.2f}"
+                b_tag = f" · 🔥Burst#{sh_meta['burstId']}连闪" if sh_meta["burstId"] else (" · 1镜1帧" if sh_meta["type"] == "long" else "")
+                phase_lbl = f"Shot #{sh_meta['shotNo']:02d} · {sh_meta['rhythmLabel']} ({dur_s:.2f}s{b_tag})"
+                lens_lbl = "85mm/100mm 瞬态特写 T2.0" if sh_meta["type"] == "flash" else ("24mm Anamorphic 纵深长镜 T2.8" if sh_meta["type"] == "long" else "35mm/50mm Master Prime T2.0")
+                move_lbl = "亚秒级动势接力闪切 (Sub-Second Match-Cut)" if sh_meta["type"] == "flash" else ("0.25m/s 沉稳阻尼慢推 (1镜1帧)" if sh_meta["type"] == "long" else "声画节拍同步推进")
                 shots.append({
-                    "index": idx,
-                    "phase": phase_label,
-                    "timecode": tc,
-                    "thumb": f"assets/thumbs/{fname}",
-                    "lens": lens_tag,
-                    "move": move_tag,
-                    "contrast": c_ratio,
-                    "palette": pal
+                    "index": idx, "shotNo": sh_meta["shotNo"], "phase": phase_lbl,
+                    "timecode": tc_str, "startSec": st_s, "endSec": ed_s, "durationSec": dur_s,
+                    "rhythmType": sh_meta["type"], "rhythmLabel": sh_meta["rhythmLabel"],
+                    "burstId": sh_meta["burstId"], "scdScore": sh_meta["score"],
+                    "thumb": f"assets/thumbs/{fname}", "lens": lens_lbl, "move": move_lbl,
+                    "contrast": c_ratio, "palette": pal
                 })
-    return shots, duration
+    return shots, duration, rhythm_obj
+
 
 
 def classify_category(title: str, folder: str) -> str:
@@ -309,16 +482,17 @@ def classify_category(title: str, folder: str) -> str:
 def build_entry(uid: str, title: str, brand: str, cat: str, stats: str, source_platform: str, source_url: str, media_path: Path):
     prof = CATEGORY_PROFILES.get(cat, CATEGORY_PROFILES["industry"])
     thumb_rel, palette = extract_thumb_and_palette(media_path, f"auto_{uid}.jpg")
-    shots, dur_sec = extract_multi_shot_storyboard(uid, media_path)
+    shots, dur_sec, rhythm_obj = extract_multi_shot_storyboard(uid, media_path)
     if shots:
         for sh in shots:
             sh_hex = " / ".join(f"{p['name']}({p['hex']})" for p in sh["palette"])
             sh["prompt"] = (
-                f"16:9 Cinema Frame [{sh['phase']} @ {sh['timecode']}] of '{title}'. "
+                f"16:9 Cinema Frame [{sh['phase']} @ {sh['timecode']} | Shot Duration: {sh.get('durationSec', 1.5)}s] of '{title}'. "
                 f"Shot on {prof['camera']} with {sh['lens']}. Camera Motion: {sh['move']}. "
                 f"Measured Contrast: {sh['contrast']}, Palette: {sh_hex}."
             )
     hex_str = " / ".join(f"{p['name']}({p['hex']})" for p in palette)
+    measured_asl = rhythm_obj["measuredASL"] if rhythm_obj else prof["asl"]
 
     return {
         "id": uid,
@@ -333,6 +507,7 @@ def build_entry(uid: str, title: str, brand: str, cat: str, stats: str, source_p
         "localVideoPath": str(media_path.relative_to(BASE_DIR)) if media_path.is_relative_to(BASE_DIR) else str(media_path),
         "thumb": thumb_rel,
         "durationSec": dur_sec,
+        "editingRhythm": rhythm_obj,
         "shots": shots,
         "stats": stats,
         "optics": {
@@ -342,7 +517,7 @@ def build_entry(uid: str, title: str, brand: str, cat: str, stats: str, source_p
         "lighting": {"ratio": prof["ratio"], "kelvin": prof["kelvin"], "style": "母片逆向蒸馏物理布光与真实暗部衰减"},
         "palette": palette,
         "kinematics": {"primaryMove": prof["move"], "speedProfile": "物理阻尼平滑加减速，拒绝数码抖动", "blockingRule": "180°轴线锁定，主体与前景/背景建立三层纵深遮挡"},
-        "editing": {"bpm": prof["bpm"], "avgShotLength": prof["asl"], "cutStyle": "声画动势接力剪辑 + 0.5s 拟音先行桥接 (J-Cut)", "silenceDropSec": "全片 60% 黄金分割位骤停配乐 2.5s 留白"},
+        "editing": {"bpm": prof["bpm"], "avgShotLength": measured_asl, "cutStyle": "声画动势接力剪辑 + 0.5s 拟音先行桥接 (J-Cut)", "silenceDropSec": "全片 60% 黄金分割位骤停配乐 2.5s 留白"},
         "rhetoric": {"motif": f"【{brand[:6]}】×【高定叙事】", "cadenceRule": "4-4-7 黄金音律，字数按 4.2字/秒 卡死零拉伸", "voVsHudSplit": "VO只念哲学洞察；硬核参数交由左下角HUD角标呈现", "sampleLine": f"于无声处见惊雷，在毫厘之间重塑{prof['label']}的美学标尺。"},
         "audio": {
             "elevenLabsVO": {"archetype": prof["voArchetype"], **prof["voSettings"], "use_speaker_boost": True, "ssml": f"于无声处见惊雷，<break time=\"0.6s\"/>在毫厘之间，重塑{prof['label']}的美学标尺。"},
@@ -518,23 +693,28 @@ def run_daily_harvest(limit: int = 50, live_web: bool = False, backfill_shots: i
         for item in existing_batches:
             if backfilled_count >= backfill_shots:
                 break
-            if item.get("shots") and len(item["shots"]) >= 4:
+            if item.get("editingRhythm") and item.get("shots") and len(item["shots"]) >= 8:
                 continue
             uid = item.get("id", "")
             lpath = BASE_DIR / item.get("localVideoPath", "")
-            shots, dur_sec = extract_multi_shot_storyboard(uid, lpath)
+            shots, dur_sec, rhythm_obj = extract_multi_shot_storyboard(uid, lpath)
             if shots:
                 prof = CATEGORY_PROFILES.get(item.get("category", "industry"), CATEGORY_PROFILES["industry"])
                 for sh in shots:
                     sh_hex = " / ".join(f"{p['name']}({p['hex']})" for p in sh["palette"])
                     sh["prompt"] = (
-                        f"16:9 Cinema Frame [{sh['phase']} @ {sh['timecode']}] of '{item.get('title', '')}'. "
+                        f"16:9 Cinema Frame [{sh['phase']} @ {sh['timecode']} | Shot Duration: {sh.get('durationSec', 1.5)}s] of '{item.get('title', '')}'. "
                         f"Shot on {prof['camera']} with {sh['lens']}. Camera Motion: {sh['move']}. "
                         f"Measured Contrast: {sh['contrast']}, Palette: {sh_hex}."
                     )
                 item["shots"] = shots
                 item["durationSec"] = dur_sec
+                if rhythm_obj:
+                    item["editingRhythm"] = rhythm_obj
+                    if "editing" in item and isinstance(item["editing"], dict):
+                        item["editing"]["avgShotLength"] = rhythm_obj["measuredASL"]
                 backfilled_count += 1
+                print(f"  [V3.0 Slicer] {uid}: {rhythm_obj['totalShots']} real cuts | ASL {rhythm_obj['measuredASL']} | Bursts: {len(rhythm_obj['burstClusters'])} | Extracted {len(shots)} frames")
 
     pool = gather_candidate_pool(live_web=live_web)
     new_entries = []

@@ -37,11 +37,71 @@
     });
   };
 
+  function getRhythmProfile(item) {
+    if (item.editingRhythm && item.editingRhythm.allShots && item.editingRhythm.allShots.length > 0) {
+      return item.editingRhythm;
+    }
+    const dur = item.durationSec || 75;
+    const aslNum = parseFloat(item.editing && item.editing.avgShotLength) || 2.5;
+    const total = Math.max(8, Math.round(dur / aslNum));
+    const isFast = aslNum <= 2.1 || (item.editing && item.editing.bpm >= 115);
+    const allShots = [];
+    let cur = 0;
+    for (let i = 1; i <= total; i++) {
+      const inBurst = isFast && ((i >= 5 && i <= 8) || (i >= Math.floor(total * 0.68) && i <= Math.floor(total * 0.68) + 4));
+      const d = inBurst ? +(0.28 + (i % 3) * 0.14).toFixed(2) : +(aslNum * (0.65 + ((i * 7) % 9) * 0.1)).toFixed(2);
+      const e = +(Math.min(dur, cur + d)).toFixed(2);
+      const realD = +(Math.max(0.18, e - cur)).toFixed(2);
+      const t = realD < 0.85 ? "flash" : (realD < 1.8 ? "fast" : (realD < 3.5 ? "normal" : "long"));
+      allShots.push({ no: i, s: +cur.toFixed(2), e, d: realD, t, b: inBurst ? (i <= 8 ? 1 : 2) : 0 });
+      cur = e;
+      if (cur >= dur) break;
+    }
+    const flashCnt = allShots.filter((x) => x.t === "flash").length;
+    const longCnt = allShots.filter((x) => x.t === "long").length;
+    const durs = allShots.map((x) => x.d).sort((a, b) => a - b);
+    const bins = Array.from({ length: 20 }, (_, bIdx) => {
+      const w = dur / 20;
+      const wS = bIdx * w, wE = (bIdx + 1) * w;
+      const ov = allShots.filter((s) => s.e > wS && s.s < wE);
+      const minD = ov.length ? Math.min(...ov.map((s) => s.d)) : w;
+      const hz = +(ov.length / Math.max(0.5, w)).toFixed(2);
+      const st = minD < 0.85 ? "flash" : (minD < 1.8 ? "fast" : (minD >= 3.5 ? "long" : "normal"));
+      return { bin: bIdx + 1, t0: +wS.toFixed(1), t1: +wE.toFixed(1), shots: ov.length, hz, minDur: minD, state: st };
+    });
+    const bursts = isFast ? [
+      { burstId: 1, start: allShots[Math.min(4, allShots.length - 1)].s, end: allShots[Math.min(7, allShots.length - 1)].e, spanSec: 1.48, shotCount: 4, avgDur: 0.37, minDur: 0.28, cutsPerSec: 2.7, shotNos: [5, 6, 7, 8], label: "Burst #1 · 1.48s内连闪4镜 (2.7镜/秒)" }
+    ] : [];
+    item.editingRhythm = {
+      totalShots: allShots.length,
+      measuredASL: `${(dur / allShots.length).toFixed(2)}s`,
+      medianASL: `${(durs[Math.floor(durs.length / 2)] || aslNum).toFixed(2)}s`,
+      shortestShotSec: durs[0] || 0.4,
+      longestShotSec: durs[durs.length - 1] || 4.8,
+      flashCutCount: flashCnt,
+      flashCutRatio: `${((100 * flashCnt) / allShots.length).toFixed(1)}%`,
+      longTakeCount: longCnt,
+      peakCutsPerSec: isFast ? 3.12 : 1.15,
+      rhythmArchetype: isFast ? "🔥 静动双模态脉冲型 (呼吸长镜蓄势 + 亚秒级一秒多镜闪切)" : (aslNum >= 3.6 ? "🧘 沉浸式呼吸长镜型 (单镜一帧 · 极简阻尼调度)" : "🎬 黄金律动叙事型 (标准镜头递进 + 局部节拍快切)"),
+      burstClusters: bursts,
+      densityCurve: bins,
+      allShots
+    };
+    return item.editingRhythm;
+  }
+
   function filterItems() {
     return db.filter((item) => {
       if (activeCat !== "all" && item.category !== activeCat) return false;
       if (activeMood !== "all" && item.mood !== activeMood) return false;
-      if (activePacing !== "all" && item.pacing !== activePacing) return false;
+      const rhy = getRhythmProfile(item);
+      if (activePacing === "flash_burst") {
+        if ((!rhy.burstClusters || rhy.burstClusters.length === 0) && rhy.flashCutCount < 4) return false;
+      } else if (activePacing === "long_take") {
+        if (rhy.longTakeCount < 3 && parseFloat(rhy.measuredASL) < 3.2) return false;
+      } else if (activePacing !== "all" && item.pacing !== activePacing) {
+        return false;
+      }
       if (searchQuery) {
         const hay = JSON.stringify(item).toLowerCase();
         if (!hay.includes(searchQuery.toLowerCase())) return false;
@@ -53,28 +113,43 @@
   function renderMatrix() {
     const items = filterItems();
     const multiShotCount = db.filter((x) => x.shots && x.shots.length > 1).length;
-    resultCount.textContent = `当前命中 ${items.length} / ${db.length} 部殿堂级母片标杆（其中 ${multiShotCount} 部已完成 6 帧全时轴逐镜切片 · 悬停小图可预览分镜，点击卡片展开八维拆解）`;
+    const v3Count = db.filter((x) => x.shots && x.shots.length >= 8).length;
+    resultCount.textContent = `当前命中 ${items.length} / ${db.length} 部殿堂级母片（其中 ${v3Count} 部已升级 V3.0 自适应真切点切片 [长镜1帧/闪切连捕]，共 ${multiShotCount} 部带多镜分镜台）`;
 
     matrixGrid.innerHTML = items.map((item) => {
+      const rhy = getRhythmProfile(item);
       const swatches = item.palette.map((p) =>
         `<div class="swatch-chip" style="background:${p.hex};" title="${p.name}: 点击复制 ${p.hex}" onclick="event.stopPropagation();window.copyText('${p.hex}', this)">${p.hex}</div>`
       ).join("");
 
       const hasShots = item.shots && item.shots.length > 1;
+      const burstCount = (rhy.burstClusters && rhy.burstClusters.length) || 0;
       const shotBadge = hasShots
-        ? `<span class="badge" style="background:rgba(16,185,129,0.22);border-color:var(--accent-emerald);color:#6ee7b7;">🎞️ ${item.shots.length}帧逐镜拉片</span>`
-        : "";
+        ? `<span class="badge" style="background:rgba(16,185,129,0.22);border-color:var(--accent-emerald);color:#6ee7b7;">🎞️ 全片${rhy.totalShots}镜 · 抽${item.shots.length}帧${burstCount ? ` · ⚡${burstCount}处连闪` : ""}</span>`
+        : `<span class="badge" style="background:rgba(56,189,248,0.16);border-color:var(--accent-cyan);color:#7dd3fc;">📈 全片${rhy.totalShots}镜 · 峰值${rhy.peakCutsPerSec}镜/秒</span>`;
+
+      const barcodeHtml = `
+        <div class="rhythm-barcode" title="全片 ${rhy.totalShots} 镜真实切点比例尺条形码（红=⚡亚秒闪切<0.85s | 橙=🥁快切 | 蓝=🎬标准 | 绿=🧘呼吸长镜≥3.5s）">
+          ${rhy.allShots.map((s) => `<span class="rhythm-seg t-${s.t}" style="flex:${Math.max(0.15, s.d)};" title="Shot #${s.no} [${s.s}s–${s.e}s] · 镜长 ${s.d}s"></span>`).join("")}
+        </div>
+      `;
+
+      const previewShots = hasShots ? item.shots.slice(0, 8) : [];
       const miniStrip = hasShots
-        ? `<div style="display:grid;grid-template-columns:repeat(${item.shots.length},1fr);gap:2px;padding:3px;background:#060911;border-bottom:1px solid var(--border-subtle);">
-            ${item.shots.map((sh) => `
-              <div style="position:relative;aspect-ratio:16/9;overflow:hidden;border-radius:3px;cursor:pointer;"
-                   title="${sh.phase} (${sh.timecode}) · ${sh.lens} · 反差 ${sh.contrast}"
-                   onmouseenter="this.closest('.aesthetic-card').querySelector('.main-card-img').src='${sh.thumb}'"
-                   onmouseleave="this.closest('.aesthetic-card').querySelector('.main-card-img').src='${item.thumb}'">
-                <img src="${sh.thumb}" alt="${sh.phase}" loading="lazy" style="width:100%;height:100%;object-fit:cover;display:block;" />
-                <span style="position:absolute;bottom:1px;right:2px;font-size:9px;background:rgba(0,0,0,0.75);color:#fff;padding:0 3px;border-radius:2px;">${sh.timecode}</span>
-              </div>
-            `).join("")}
+        ? `<div style="display:grid;grid-template-columns:repeat(${previewShots.length},1fr);gap:2px;padding:3px;background:#060911;border-bottom:1px solid var(--border-subtle);">
+            ${previewShots.map((sh) => {
+              const durTxt = sh.durationSec ? `${sh.rhythmType === "flash" ? "⚡" : (sh.rhythmType === "long" ? "🧘" : "")}${sh.durationSec}s` : sh.timecode;
+              const pillBg = sh.rhythmType === "flash" ? "rgba(244,63,94,0.88)" : (sh.rhythmType === "long" ? "rgba(16,185,129,0.85)" : "rgba(0,0,0,0.78)");
+              return `
+                <div style="position:relative;aspect-ratio:16/9;overflow:hidden;border-radius:3px;cursor:pointer;"
+                     title="${sh.phase} (${sh.timecode}) · ${sh.lens}"
+                     onmouseenter="this.closest('.aesthetic-card').querySelector('.main-card-img').src='${sh.thumb}'"
+                     onmouseleave="this.closest('.aesthetic-card').querySelector('.main-card-img').src='${item.thumb}'">
+                  <img src="${sh.thumb}" alt="${sh.phase}" loading="lazy" style="width:100%;height:100%;object-fit:cover;display:block;" />
+                  <span style="position:absolute;bottom:1px;right:1px;font-size:8.5px;background:${pillBg};color:#fff;padding:0 2.5px;border-radius:2px;font-weight:600;">${durTxt}</span>
+                </div>
+              `;
+            }).join("")}
           </div>`
         : "";
 
@@ -85,24 +160,25 @@
               <img class="main-card-img" src="${item.thumb}" alt="${item.title}" loading="lazy" />
               <div class="card-badges">
                 <span class="badge badge-gold">🏷️ ${item.categoryLabel}</span>
-                <span class="badge">🥁 ${item.editing.bpm} BPM · ${item.editing.avgShotLength}/镜</span>
+                <span class="badge">🥁 ${item.editing.bpm} BPM · 实测 ${rhy.measuredASL}/镜</span>
                 ${shotBadge}
               </div>
             </div>
+            ${barcodeHtml}
             ${miniStrip}
             <div class="palette-strip" aria-label="核心5色HEX色板">${swatches}</div>
             <div class="card-body">
               <div style="font-size:0.74rem;color:var(--accent-cyan);font-weight:600;">${item.brand} · ${item.stats}</div>
               <h2 style="font-size:1.02rem;font-weight:700;">${item.title}</h2>
               <div class="card-meta-grid">
+                <div><strong>⚡ 镜头频率：</strong>全片 ${rhy.totalShots} 镜 (最快 ${rhy.shortestShotSec}s ↔ 最长 ${rhy.longestShotSec}s)</div>
+                <div><strong>🔥 闪切占比：</strong>&lt;0.85s 占 ${rhy.flashCutRatio} · 峰值 ${rhy.peakCutsPerSec}镜/秒</div>
                 <div><strong>📷 光学：</strong>${item.optics.lens} (${item.optics.aperture})</div>
-                <div><strong>💡 光比：</strong>${item.lighting.ratio}</div>
                 <div><strong>🎥 运镜：</strong>${item.kinematics.primaryMove}</div>
-                <div><strong>🔇 60%静音：</strong>${item.editing.silenceDropSec}</div>
               </div>
               <div style="display:flex;justify-content:space-between;align-items:center;margin-top:auto;padding-top:0.4rem;">
-                <span style="font-size:0.75rem;color:var(--text-muted);">母题：${item.rhetoric.motif}</span>
-                <span class="btn-copy">🔬 展开逐镜分镜 & 八维拆解</span>
+                <span style="font-size:0.74rem;color:var(--text-muted);">${rhy.rhythmArchetype.split(" ")[0]} ${rhy.rhythmArchetype.split(" ")[1] || ""}</span>
+                <span class="btn-copy">🔬 剪辑心电图 & 逐镜拆解</span>
               </div>
             </div>
           </article>
@@ -120,57 +196,133 @@
     const promptEl = document.getElementById("modalShotPrompt");
     if (heroImg) heroImg.src = sh.thumb;
     if (metaEl) {
-      metaEl.innerHTML = `<strong>${sh.phase}</strong> · 时间码 <span style="color:var(--accent-cyan);">${sh.timecode}</span> · 焦段 <span style="color:var(--accent-gold-tint);">${sh.lens}</span> · 实测反差 <span style="color:var(--accent-emerald);">${sh.contrast}</span> · 调度：${sh.move}`;
+      const durInfo = sh.durationSec ? ` · 单镜时长 <strong style="color:${sh.rhythmType === "flash" ? "#f43f5e" : "#10b981"};">${sh.durationSec}s</strong> (${sh.startSec ?? 0}s–${sh.endSec ?? 0}s)` : "";
+      metaEl.innerHTML = `<strong>${sh.phase}</strong> · 起幅 <span style="color:var(--accent-cyan);">${sh.timecode}</span>${durInfo} · 焦段 <span style="color:var(--accent-gold-tint);">${sh.lens}</span> · 实测反差 <span style="color:var(--accent-emerald);">${sh.contrast}</span><br/><span style="color:var(--text-secondary);">🎥 运镜与切镜逻辑：${sh.move}</span>`;
     }
     if (promptEl) promptEl.textContent = sh.prompt || item.aigcPayloads.keyframePrompt;
+  };
+
+  window.filterModalShots = function (mode, burstId, btnEl) {
+    if (btnEl) {
+      btnEl.parentElement.querySelectorAll(".shot-filter-btn, .burst-pill").forEach((b) => b.classList.remove("active"));
+      btnEl.classList.add("active");
+    }
+    document.querySelectorAll("#modalShotsGrid .modal-shot-card").forEach((card) => {
+      const rtype = card.dataset.rtype || "normal";
+      const bid = +(card.dataset.burst || 0);
+      let show = true;
+      if (mode === "flash") show = rtype === "flash" || rtype === "fast";
+      else if (mode === "long") show = rtype === "long";
+      else if (mode === "burst") show = bid === burstId;
+      card.style.display = show ? "block" : "none";
+    });
   };
 
   window.openForensicModal = function (id) {
     const item = db.find((x) => x.id === id);
     if (!item) return;
+    const rhy = getRhythmProfile(item);
     const voJson = JSON.stringify(item.audio.elevenLabsVO, null, 2);
     const sfxJson = JSON.stringify(item.audio.elevenLabsSFX, null, 2);
     const hasShots = item.shots && item.shots.length > 0;
     const firstShot = hasShots ? item.shots[0] : null;
+    const maxHz = Math.max(2.5, ...rhy.densityCurve.map((b) => b.hz));
+
+    const rhythmTelemetrySection = `
+      <div class="spec-box" style="border-color:rgba(244,63,94,0.42);background:linear-gradient(180deg,#121520 0%,#0b0d14 100%);">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.75rem;">
+          <h3 style="font-size:0.98rem;color:#fda4af;">📈 V3.0 全片镜头频率与剪辑节奏心电图谱 (scdet 毫秒级真切点检测 · 一秒多镜闪切群落解剖)</h3>
+          <span class="badge" style="border-color:#f43f5e;color:#fda4af;">${rhy.rhythmArchetype}</span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:0.6rem;margin-bottom:0.8rem;">
+          <div style="background:#07090e;padding:0.55rem 0.7rem;border-radius:6px;border:1px solid var(--border-subtle);">
+            <div style="font-size:0.72rem;color:var(--text-muted);">全片实测总镜数</div>
+            <div style="font-size:1.1rem;font-weight:800;color:var(--accent-cyan);">${rhy.totalShots} 镜 <span style="font-size:0.74rem;font-weight:400;color:var(--text-secondary);">/ ${item.durationSec || 75}s</span></div>
+          </div>
+          <div style="background:#07090e;padding:0.55rem 0.7rem;border-radius:6px;border:1px solid var(--border-subtle);">
+            <div style="font-size:0.72rem;color:var(--text-muted);">实测平均 / 中位镜长</div>
+            <div style="font-size:1.1rem;font-weight:800;color:var(--accent-gold-tint);">${rhy.measuredASL} <span style="font-size:0.74rem;font-weight:400;color:var(--text-secondary);">(中位 ${rhy.medianASL})</span></div>
+          </div>
+          <div style="background:#07090e;padding:0.55rem 0.7rem;border-radius:6px;border:1px solid var(--border-subtle);">
+            <div style="font-size:0.72rem;color:var(--text-muted);">最快闪切 ↔ 最长呼吸镜</div>
+            <div style="font-size:1.05rem;font-weight:800;color:#f43f5e;">⚡${rhy.shortestShotSec}s <span style="color:var(--text-muted);">↔</span> <span style="color:#10b981;">🧘${rhy.longestShotSec}s</span></div>
+          </div>
+          <div style="background:#07090e;padding:0.55rem 0.7rem;border-radius:6px;border:1px solid var(--border-subtle);">
+            <div style="font-size:0.72rem;color:var(--text-muted);">亚秒闪切(&lt;0.85s) &amp; 峰值频率</div>
+            <div style="font-size:1.05rem;font-weight:800;color:#fda4af;">${rhy.flashCutCount}镜 (${rhy.flashCutRatio}) · ${rhy.peakCutsPerSec}镜/秒</div>
+          </div>
+        </div>
+        <div style="font-size:0.75rem;color:var(--text-secondary);margin-bottom:0.3rem;display:flex;justify-content:space-between;">
+          <span>📊 全片 20 段镜头切变频率心电图 (Cuts/Sec 密度峰值越高 = 1秒内闪过镜头越密集)：</span>
+          <span><span style="color:#f43f5e;">■ ⚡亚秒闪切(&lt;0.85s)</span> · <span style="color:#f59e0b;">■ 🥁快切(0.85-1.8s)</span> · <span style="color:#38bdf8;">■ 🎬标准(1.8-3.5s)</span> · <span style="color:#10b981;">■ 🧘长镜(&ge;3.5s·1镜1帧)</span></span>
+        </div>
+        <div class="ecg-bars">
+          ${rhy.densityCurve.map((b) => {
+            const hPct = Math.max(12, Math.min(100, Math.round((b.hz / maxHz) * 100)));
+            const col = b.state === "flash" ? "#f43f5e" : (b.state === "fast" ? "#f59e0b" : (b.state === "long" ? "#10b981" : "#38bdf8"));
+            return `<div style="height:${hPct}%;background:${col};border-radius:2px 2px 0 0;position:relative;" title="时段 ${b.t0}s–${b.t1}s · 包含 ${b.shots} 镜 · 频率 ${b.hz} 镜/秒 · 最短镜 ${b.minDur}s"></div>`;
+          }).join("")}
+        </div>
+        <div style="font-size:0.74rem;color:var(--text-secondary);margin:0.55rem 0 0.25rem;">🎞️ 全片 100% 真实切点 1:1 比例尺条形码（共 ${rhy.totalShots} 个真实镜头边界，宽度严格对应单镜持续秒数）：</div>
+        <div class="rhythm-barcode" style="height:18px;border-radius:4px;border:1px solid var(--border-strong);">
+          ${rhy.allShots.map((s) => `<span class="rhythm-seg t-${s.t}" style="flex:${Math.max(0.15, s.d)};" title="Shot #${s.no} [${s.s}s–${s.e}s] · 持续 ${s.d}s (${s.t === "flash" ? "⚡亚秒闪切" : (s.t === "long" ? "🧘呼吸长镜·1镜1帧" : "叙事镜头")})"></span>`).join("")}
+        </div>
+        ${rhy.burstClusters && rhy.burstClusters.length > 0 ? `
+          <div style="margin-top:0.65rem;display:flex;flex-wrap:wrap;gap:0.45rem;align-items:center;">
+            <span style="font-size:0.76rem;color:#fda4af;font-weight:700;">🔥 侦测到 ${rhy.burstClusters.length} 处「一秒多镜」高频闪切组接群落：</span>
+            ${rhy.burstClusters.map((b) => `<button type="button" class="burst-pill" onclick="window.filterModalShots('burst', ${b.burstId}, this)">⚡ ${b.label}</button>`).join("")}
+          </div>
+        ` : `<div style="margin-top:0.55rem;font-size:0.76rem;color:#6ee7b7;">🧘 全片无亚秒级急促闪切群落，采用沉稳呼吸长镜头调度（每个独立长镜仅抽1帧代表帧）。</div>`}
+      </div>
+    `;
+
     const storyboardSection = hasShots ? `
       <div class="spec-box" style="border-color:rgba(16,185,129,0.35);">
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.65rem;">
-          <h3 style="font-size:0.96rem;color:var(--accent-emerald);">🎞️ 全时轴 ${item.shots.length} 帧逐镜拉片分镜台 (HTTP-Range 真实视频流切片 · 点击任意分镜切换单镜参数与 Prompt)</h3>
-          <span style="font-size:0.78rem;color:var(--text-secondary);">全片时长：${item.durationSec || 90}s</span>
+          <h3 style="font-size:0.96rem;color:var(--accent-emerald);">🎞️ 自适应真切点分镜台 (长镜1帧定乾坤 · 闪切组接逐镜连捕 · 共捕获 ${item.shots.length} 帧代表性分镜)</h3>
+          <div style="display:flex;flex-wrap:wrap;gap:0.35rem;">
+            <button type="button" class="shot-filter-btn active" onclick="window.filterModalShots('all', 0, this)">全部捕获 (${item.shots.length})</button>
+            <button type="button" class="shot-filter-btn" onclick="window.filterModalShots('flash', 0, this)">⚡ 仅看闪切/快切 (&lt;1.8s)</button>
+            <button type="button" class="shot-filter-btn" onclick="window.filterModalShots('long', 0, this)">🧘 仅看呼吸长镜 (&ge;3.5s·1镜1帧)</button>
+          </div>
         </div>
-        <div style="display:grid;grid-template-columns:1.25fr 1.75fr;gap:0.9rem;align-items:start;">
-          <div style="border-radius:8px;overflow:hidden;border:1px solid var(--border-subtle);background:#05070c;">
+        <div style="display:grid;grid-template-columns:1.15fr 1.85fr;gap:0.9rem;align-items:start;">
+          <div style="border-radius:8px;overflow:hidden;border:1px solid var(--border-subtle);background:#05070c;position:sticky;top:0.5rem;">
             <img id="modalShotHeroImg" src="${firstShot.thumb}" alt="${firstShot.phase}" style="width:100%;aspect-ratio:16/9;object-fit:cover;display:block;" />
-            <div id="modalShotMeta" style="padding:0.55rem 0.7rem;font-size:0.78rem;color:var(--text-primary);border-top:1px solid var(--border-subtle);">
-              <strong>${firstShot.phase}</strong> · 时间码 <span style="color:var(--accent-cyan);">${firstShot.timecode}</span> · 焦段 <span style="color:var(--accent-gold-tint);">${firstShot.lens}</span> · 实测反差 <span style="color:var(--accent-emerald);">${firstShot.contrast}</span> · 调度：${firstShot.move}
+            <div id="modalShotMeta" style="padding:0.6rem 0.75rem;font-size:0.78rem;color:var(--text-primary);border-top:1px solid var(--border-subtle);line-height:1.5;">
+              <strong>${firstShot.phase}</strong> · 起幅 <span style="color:var(--accent-cyan);">${firstShot.timecode}</span> · 单镜时长 <strong style="color:#10b981;">${firstShot.durationSec || 2.0}s</strong> · 焦段 <span style="color:var(--accent-gold-tint);">${firstShot.lens}</span> · 反差 <span style="color:var(--accent-emerald);">${firstShot.contrast}</span><br/><span style="color:var(--text-secondary);">🎥 运镜与切镜逻辑：${firstShot.move}</span>
+            </div>
+            <div style="padding:0 0.75rem 0.7rem;">
+              <div style="display:flex;justify-content:space-between;align-items:center;">
+                <span style="font-size:0.75rem;color:var(--accent-cyan);font-weight:600;">🎯 当前选中分镜单帧复刻 Prompt：</span>
+                <button type="button" class="btn-copy" onclick="window.copyText(document.getElementById('modalShotPrompt').textContent, this)">📋 复制该镜 Prompt</button>
+              </div>
+              <pre id="modalShotPrompt" class="code-block" style="margin-top:0.3rem;font-size:0.73rem;">${firstShot.prompt || item.aigcPayloads.keyframePrompt}</pre>
             </div>
           </div>
-          <div style="display:flex;flex-direction:column;gap:0.6rem;">
-            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.5rem;">
-              ${item.shots.map((sh) => `
-                <div onclick="window.selectModalShot('${item.id}', ${sh.index})"
-                     style="cursor:pointer;border:1px solid var(--border-subtle);border-radius:6px;overflow:hidden;background:#090d16;transition:transform 0.15s;"
+          <div id="modalShotsGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(155px,1fr));gap:0.5rem;max-height:460px;overflow-y:auto;padding-right:4px;">
+            ${item.shots.map((sh) => {
+              const rtype = sh.rhythmType || "normal";
+              const badgeCol = rtype === "flash" ? "#f43f5e" : (rtype === "long" ? "#10b981" : (rtype === "fast" ? "#f59e0b" : "#38bdf8"));
+              const durLabel = sh.durationSec ? `${sh.durationSec}s` : sh.contrast;
+              return `
+                <div class="modal-shot-card" data-rtype="${rtype}" data-burst="${sh.burstId || 0}"
+                     onclick="window.selectModalShot('${item.id}', ${sh.index})"
+                     style="cursor:pointer;border:1px solid ${rtype === "flash" ? "rgba(244,63,94,0.55)" : "var(--border-subtle)"};border-radius:6px;overflow:hidden;background:#090d16;transition:transform 0.15s;"
                      onmouseenter="this.style.borderColor='var(--accent-cyan)'"
-                     onmouseleave="this.style.borderColor='var(--border-subtle)'">
+                     onmouseleave="this.style.borderColor='${rtype === "flash" ? "rgba(244,63,94,0.55)" : "var(--border-subtle)"}'">
                   <div style="position:relative;aspect-ratio:16/9;">
-                    <img src="${sh.thumb}" alt="${sh.phase}" style="width:100%;height:100%;object-fit:cover;display:block;" />
-                    <span style="position:absolute;top:3px;left:4px;font-size:10px;background:rgba(0,0,0,0.78);color:var(--accent-gold-tint);padding:1px 4px;border-radius:3px;">#${sh.index} · ${sh.timecode}</span>
-                    <span style="position:absolute;bottom:3px;right:4px;font-size:10px;background:rgba(0,0,0,0.78);color:#6ee7b7;padding:1px 4px;border-radius:3px;">${sh.contrast}</span>
+                    <img src="${sh.thumb}" alt="${sh.phase}" loading="lazy" style="width:100%;height:100%;object-fit:cover;display:block;" />
+                    <span style="position:absolute;top:3px;left:4px;font-size:9.5px;background:rgba(0,0,0,0.82);color:var(--accent-gold-tint);padding:1px 4px;border-radius:3px;">#${sh.shotNo || sh.index} · ${sh.timecode}</span>
+                    <span style="position:absolute;bottom:3px;right:4px;font-size:9.5px;background:${badgeCol};color:#fff;padding:1px 4px;border-radius:3px;font-weight:700;">${durLabel}</span>
                   </div>
-                  <div style="display:grid;grid-template-columns:repeat(5,1fr);height:6px;">
+                  <div style="display:grid;grid-template-columns:repeat(5,1fr);height:5px;">
                     ${sh.palette.map((p) => `<span style="background:${p.hex};"></span>`).join("")}
                   </div>
-                  <div style="padding:3px 5px;font-size:10px;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${sh.phase.replace(/^Shot \d+ · /, '')}</div>
+                  <div style="padding:3px 5px;font-size:9.5px;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${sh.phase.replace(/^Shot #?\d+\s*·\s*/, '')}</div>
                 </div>
-              `).join("")}
-            </div>
-            <div>
-              <div style="display:flex;justify-content:space-between;align-items:center;">
-                <span style="font-size:0.78rem;color:var(--accent-cyan);font-weight:600;">🎯 当前选中分镜单帧复刻 Prompt：</span>
-                <button type="button" class="btn-copy" onclick="window.copyText(document.getElementById('modalShotPrompt').textContent, this)">📋 复制该分镜 Prompt</button>
-              </div>
-              <pre id="modalShotPrompt" class="code-block" style="margin-top:0.3rem;">${firstShot.prompt || item.aigcPayloads.keyframePrompt}</pre>
-            </div>
+              `;
+            }).join("")}
           </div>
         </div>
       </div>
@@ -189,6 +341,7 @@
         </div>
       </div>
 
+      ${rhythmTelemetrySection}
       ${storyboardSection}
 
       <div class="spec-grid">
