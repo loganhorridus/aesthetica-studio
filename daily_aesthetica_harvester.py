@@ -460,22 +460,69 @@ def extract_multi_shot_storyboard(uid: str, media_path: Path, vid: str = "", dur
 
 
 
-def classify_category(title: str, folder: str) -> str:
-    txt = f"{title} {folder}".lower()
-    if any(k in txt for k in ["时尚", "时装", "奢", "vogue", "bazaar", "ysl", "prada", "hermes", "chanel", "mv", "女团", "男团"]):
-        return "luxury" if any(k in txt for k in ["奢", "时装", "珠宝", "腕表", "香水", "坦塔伦"]) else "fashion_sport"
-    if any(k in txt for k in ["手机", "3c", "oppo", "vivo", "华为", "小米", "东芝", "松下", "家电", "数码", "镜头"]):
-        return "tech3c"
-    if any(k in txt for k in ["ai", "大会", "峰会", "火山", "外滩", "阿里云", "腾讯", "年会", "开场"]):
-        return "aikeynote"
-    if any(k in txt for k in ["医药", "生物", "健康", "营养", "农业", "医疗", "医师"]):
-        return "biotech"
-    if any(k in txt for k in ["文旅", "旅游", "非遗", "茶", "美食", "湘西", "景德镇", "城市", "武汉", "深圳", "酒"]):
-        return "culture"
-    if any(k in txt for k in ["建筑", "住宅", "包豪斯", "侘寂", "别墅", "肖像", "ceo", "达沃斯", "boris", "地产", "和悦"]):
+def classify_category(title: str, folder: str, extra: str = "", uid: str = "") -> str:
+    if uid.startswith("AD-") or uid.startswith("EXEC-"):
         return "architecture"
-    if any(k in txt for k in ["体育", "大运", "mlb", "运动", "赛"]):
+    txt = f"{title} {folder} {extra}".lower()
+    if any(k in txt for k in [
+        "顶奢", "高定", "高奢", "时装", "奢", "珠宝", "钻石", "黄金", "周大福", "腕表", "名表", "香水", "香氛",
+        "美妆", "护肤", "彩妆", "口红", "粉底", "面霜", "精华", "面膜", "洗发", "沐浴",
+        "vogue", "bazaar", "芭莎", "gq", "智族", "elle", "嘉人", "红秀", "时尚先生", "cosmopolitan",
+        "ysl", "prada", "hermes", "爱马仕", "chanel", "香奈儿", "dior", "迪奥", "lv", "路易威登", "cartier", "卡地亚",
+        "gucci", "古驰", "burberry", "tiffany", "宝格丽", "范思哲", "阿玛尼", "华伦天奴", "纪梵希", "娇兰",
+        "自然堂", "珀莱雅", "兰蔻", "雅诗兰黛", "欧莱雅", "资生堂", "海蓝之谜", "立白大师香氛", "坦塔伦",
+        "时尚", "大片", "杂志", "封面", "走秀", "时装周", "超模", "模特", "穿搭", "摩登", "优雅", "视觉探索",
+        "戚薇", "金晨", "田曦薇", "欧阳娜娜", "王俊凯", "易烊千玺", "肖战", "王一博", "迪丽热巴", "舒淇", "周迅"
+    ]):
+        return "luxury"
+    if any(k in txt for k in [
+        "手机", "3c", "oppo", "vivo", "华为", "huawei", "nova", "mate", "pura", "荣耀", "magic",
+        "小米", "xiaomi", "redmi", "apple", "iphone", "ipad", "macbook", "东芝", "toshiba", "松下",
+        "创维", "海尔", "美的", "tcl", "微鲸", "方太", "老板电器", "家电", "电视", "冰箱", "空调", "洗衣", "吹风机", "吸尘器",
+        "追觅", "添可", "大疆", "dji", "富士", "fujifilm", "gfx", "eterna", "索尼", "sony", "徕卡", "leica",
+        "蔡司", "zeiss", "相机", "镜头", "单反", "微单", "画质", "hdr", "gamer", "影音舱", "耳机", "音响",
+        "数码", "智能储能", "zendure", "充电", "移动电源", "掌中电影机", "开箱", "芯片", "嘉晨"
+    ]):
+        return "tech3c"
+    if any(k in txt for k in [
+        "体育", "运动", "竞技", "大运", "亚运", "奥运", "世界杯", "篮球", "足球", "网球", "羽毛球", "乒乓",
+        "跑步", "马拉松", "滑雪", "单板", "冲浪", "滑板", "攀岩", "拳击", "拳套", "健身", "街舞", "舞蹈", "骑行",
+        "耐克", "nike", "阿迪", "adidas", "安踏", "anta", "李宁", "lining", "特步", "匹克", "mlb", "fila",
+        "lululemon", "迪卡侬", "运动户外", "天生爱玩水", "易建联", "刘佳宇", "苏炳添", "谷爱凌", "郑钦文",
+        "mv", "女团", "男团", "主题曲", "说唱", "嘻哈", "乐队", "音乐", "法老", "狂潮", "潮牌", "球鞋"
+    ]):
         return "fashion_sport"
+    if any(k in txt for k in [
+        "医药", "生物", "医疗", "健康", "医院", "医生", "医师", "药", "疫苗", "基因", "细胞", "临床",
+        "皮尔法伯", "康希诺", "迈瑞", "联影", "养生", "营养", "母婴", "奶粉", "眼科", "口腔", "睡眠",
+        "cop15", "千岛万物", "绿发", "绿动", "青藏高原", "生态", "自然", "环保", "森林", "海洋", "湿地",
+        "野生动物", "保护", "农业", "农特产", "荔枝", "茶园", "纯悦", "公益", "绿色"
+    ]):
+        return "biotech"
+    if any(k in txt for k in [
+        "建筑", "住宅", "豪宅", "别墅", "地产", "置业", "空间", "家居", "家具", "设计", "包豪斯", "侘寂",
+        "美术馆", "艺术馆", "博物馆", "展览", "酒店", "度假", "和悦", "万科", "华润", "保利", "中海", "绿城", "融创",
+        "移轴", "流动的房间", "肖像", "ceo", "创始人", "董事长", "企业家", "大师", "达沃斯", "boris",
+        "对话", "访谈", "罗永浩", "张涵予", "李健", "韩寒", "廖凡", "吴青峰", "银行", "银联", "金融", "财富",
+        "平安", "保险", "证券", "基金", "大学", "中学", "学院", "名校", "教育", "毕业", "得力"
+    ]):
+        return "architecture"
+    if any(k in txt for k in [
+        "文旅", "旅游", "非遗", "东方", "国风", "古风", "传统", "历史", "文化", "茶", "酒", "茅台", "五粮液",
+        "咖啡", "美食", "餐厅", "黑珍珠", "必胜客", "肯德基", "麦当劳", "饿了么", "美团", "买菜", "滋味", "舌尖",
+        "春节", "cny", "过年", "新年", "贺岁", "跨年", "年货节", "中秋", "端午", "冬至", "小寒", "节气", "春天", "春之约",
+        "团圆", "回家", "家乡", "成都", "四川", "重庆", "武汉", "深圳", "上海", "北京", "广州", "杭州", "苏州",
+        "西安", "云南", "贵州", "西藏", "新疆", "湘西", "景德镇", "绍兴", "河山", "山河", "人民日报", "央视",
+        "微电影", "剧情短片", "纪录片", "老杜", "故事", "牦牛", "怒江", "温情", "走心", "致敬", "普通人"
+    ]):
+        return "culture"
+    if any(k in txt for k in [
+        "ai", "人工智能", "大模型", "算力", "云", "数字化", "互联网", "代码", "程序员", "软件", "科技",
+        "大会", "峰会", "论坛", "盛典", "年会", "开场", "周年", "先导", "概念片", "发布会", "宣言", "洞见未来", "相信的力量",
+        "bilibili", "b站", "alibaba", "阿里", "天猫", "淘宝", "闲鱼", "京东", "jd", "拼多多", "腾讯", "微信",
+        "百度", "字节", "抖音", "快手", "火山", "外滩", "苏宁", "联通", "移动", "电信", "科幻", "游戏", "天龙八部", "电竞"
+    ]):
+        return "aikeynote"
     return "industry"
 
 
@@ -627,7 +674,8 @@ def gather_candidate_pool(live_web: bool = False):
                 uid = s["id"]
                 title = s["title"]
                 brand = s["brand"]
-                cat = classify_category(title, brand)
+                extra_meta = f"{s.get('description', '')} {' '.join(s.get('categories', []))}"
+                cat = classify_category(title, brand, extra_meta, uid)
                 stats = f"主创：{brand} · {s['likes']}赞 / {s['collects']}藏 · 新片场高藏精选"
                 candidates.append((uid, title, brand, cat, stats, f"新片场 ({uid})", s["url"], Path(s["cover"])))
         except Exception:
