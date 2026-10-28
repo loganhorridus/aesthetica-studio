@@ -367,7 +367,7 @@ def extract_multi_shot_storyboard(uid: str, media_path: Path, vid: str = "", dur
             duration = int(data.get("duration") or duration or 90)
             prog = (data.get("resource") or {}).get("progressive") or []
             if prog:
-                chosen = next((p for p in prog if p.get("quality") in ["540p", "360p", "720p"]), prog[-1])
+                chosen = next((p for q in ["360p", "540p", "720p"] for p in prog if p.get("quality") == q), prog[-1])
                 stream_url = chosen.get("url") or ""
                 headers_arg = ["-headers", "Referer: https://www.xinpianchang.com/\r\n"]
         except Exception:
