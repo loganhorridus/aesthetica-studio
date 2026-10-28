@@ -90,47 +90,8 @@
     return item.editingRhythm;
   }
 
-  const FLAGSHIP_VIDEO_MAP = {
-    "LY-01": "XPC32-64A5AA",
-    "TC-04": "XPC32-5C2E4F",
-    "TC-05": "XPC32-7F634C",
-    "TC-06": "XPC32-912799",
-    "IN-08": "XPC32-48F293",
-    "IN-09": "XPC32-3E47A3",
-    "AI-10": "XPC32-5DC824",
-    "AI-11": "XPC32-A67E6C",
-    "BIO-12": "XPC32-E0F0EC",
-    "CUL-13": "XPC32-34EFF3",
-    "SPT-14": "XPC32-4D08A9",
-    "CUL-16": "XPC32-2BFB04"
-  };
-
-  function ensureItemShots(item) {
-    if (item.shots && item.shots.length > 1) return item.shots;
-    const mappedId = FLAGSHIP_VIDEO_MAP[item.id];
-    if (mappedId) {
-      const donor = db.find((x) => x.id === mappedId && x.shots && x.shots.length > 1);
-      if (donor) {
-        item.shots = donor.shots;
-        if (donor.editingRhythm) item.editingRhythm = donor.editingRhythm;
-        if (donor.durationSec) item.durationSec = donor.durationSec;
-        return item.shots;
-      }
-    }
-    const catDonors = db.filter((x) => x.category === item.category && x.shots && x.shots.length >= 8);
-    if (catDonors.length > 0) {
-      let hash = 0;
-      for (let i = 0; i < item.id.length; i++) hash = (hash * 31 + item.id.charCodeAt(i)) >>> 0;
-      const chosenDonor = catDonors[hash % catDonors.length];
-      item.shots = chosenDonor.shots.map((sh, idx) => idx === 0 ? Object.assign({}, sh, { thumb: item.thumb }) : sh);
-      return item.shots;
-    }
-    return item.shots || [];
-  }
-
   function filterItems() {
     return db.filter((item) => {
-      ensureItemShots(item);
       if (activeCat !== "all" && item.category !== activeCat) return false;
       if (activeMood !== "all" && item.mood !== activeMood) return false;
       const rhy = getRhythmProfile(item);

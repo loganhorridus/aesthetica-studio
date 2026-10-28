@@ -610,47 +610,13 @@ def gather_candidate_pool(live_web: bool = False):
                 cat = classify_category(title, director)
                 candidates.append((uid, f"{title} ({director}导演版)", director, cat, stats, f"新片场 (a{aid})", f"https://www.xinpianchang.com/a{aid}", mp4))
 
-    # Pool 3: Architectural Digest (AD) & Global Luxury Villas (25+ 16:9 Plates)
-    for folder_name in [
-        "solution/全球10大顶奢住宅风格摄影图鉴_16x9",
-        "solution/AD_6大新增美学维度概念图鉴_16x9",
-        "solution/包豪斯_现代工业_科技侘寂_8大极简空间图鉴_16x9"
-    ]:
-        fdir = BASE_DIR / folder_name
-        for img in sorted(fdir.glob("*.jpg")):
-            uid = "AD-" + hashlib.md5(img.stem.encode()).hexdigest()[:6].upper()
-            clean_title = img.stem.replace("_", " ")
-            candidates.append((uid, f"AD顶奢建筑 · {clean_title}", "Architectural Digest", "architecture", "AD全球顶奢空间摄影与光影母本", "Architectural Digest", "https://www.architecturaldigest.com", img))
-
-    # Pool 4: Bangjaeyeob (方在烨导演) Commercial & MV Archive (All 94 MP4s)
-    bang_dir = BASE_DIR / "方在烨导演作品库_1080P"
-    for mp4 in sorted(bang_dir.glob("*/*/*.mp4")):
-        uid = "BANG-" + hashlib.md5(mp4.stem.encode()).hexdigest()[:6].upper()
-        sub = mp4.parent.name
-        yr = mp4.parent.parent.name
-        cat = "luxury" if "商业" in sub else "fashion_sport"
-        candidates.append((uid, f"方在烨 ({yr}) · {mp4.stem[:28]}", "BANGJAEYEOB FILM", cat, f"韩国顶流视觉导演方在烨 {yr} {sub}母片", "BANGJAEYEOB Archive", "https://bangjaeyeob.com", mp4))
-
-    # Pool 5: Annual Gala & Enterprise Opening Films (26 MP4s)
+    # Pool 3: Annual Gala & Enterprise Opening Films (26 Xinpianchang MP4s)
     gala_dir = BASE_DIR / "新片场_华润及名企年会开场与全流程视频精选库_26部"
     for mp4 in sorted(gala_dir.glob("*/*.mp4")):
         uid = "GALA-" + hashlib.md5(mp4.stem.encode()).hexdigest()[:6].upper()
         candidates.append((uid, f"名企峰会盛典 · {mp4.stem[:26]}", "名企峰会先导", "aikeynote", "新片场高藏大型峰会与品牌开场标杆", "新片场峰会精选库", "https://www.xinpianchang.com", mp4))
 
-    # Pool 6: NVIDIA / Xiaomi / MediaStorm / Planet Institute / Chapingjun VFX & Camera Suites
-    vfx_dirs = [
-        ("solution/NVIDIA_官方宣传片16大特效套路检索库与跨软件制作指南/previews", "NVIDIA Official", "aikeynote", "NVIDIA 300部官方片提纯16大三维动效母本"),
-        ("solution/影视飓风_MediaStorm_16大镜头与特效检索库及双轨生成指南/assets", "影视飓风 MediaStorm", "tech3c", "影视飓风828部视频提纯16大特种运镜母本"),
-        ("solution/星球研究所_InstituteForPlanets_16大特效套路检索库与双轨生成指南/previews", "星球研究所", "culture", "星球研究所177部超级工程与地理视觉母本"),
-        ("solution/差评君_全频道16大特效套路检索库与双轨生成字典/previews", "差评君", "aikeynote", "差评君429部科技叙事动效母体字典")
-    ]
-    for rel_d, brand_name, cat_name, desc_txt in vfx_dirs:
-        vd = BASE_DIR / rel_d
-        for img in sorted(vd.glob("*.jpg")) + sorted(vd.glob("*.png")):
-            uid = "VFX-" + hashlib.md5(str(img).encode()).hexdigest()[:6].upper()
-            candidates.append((uid, f"{brand_name} · {img.stem}", brand_name, cat_name, desc_txt, brand_name, "https://www.youtube.com", img))
-
-    # Pool 7: Xinpianchang Industrial & Global Supply Chain Benchmarks (83 MP4s)
+    # Pool 4: Xinpianchang Industrial & Global Supply Chain Benchmarks (83 MP4s)
     for ind_folder in [
         "新片场_工业物流与智能仓储标杆样片库_23部最高清",
         "新片场_品类A_跨境物流_海外仓与云仓供应链对客片全量库_60部"
@@ -660,13 +626,7 @@ def gather_candidate_pool(live_web: bool = False):
             uid = "IND-" + hashlib.md5(mp4.stem.encode()).hexdigest()[:6].upper()
             candidates.append((uid, f"硬核智造与全球供应链 · {mp4.stem[:28]}", mp4.parent.name[:12], "industry", "新片场三阶预算定级工业与供应链标杆母片", "新片场工业标杆库", "https://www.xinpianchang.com", mp4))
 
-    # Pool 8: Boris Baldinger Davos & Executive Portraits (154 High-Res Stills)
-    boris_dir = BASE_DIR / "Boris_Baldinger_作品库"
-    for img in sorted(boris_dir.glob("*/*.jpg"))[:60]:
-        uid = "EXEC-" + hashlib.md5(img.stem.encode()).hexdigest()[:6].upper()
-        candidates.append((uid, f"达沃斯与高管肖像 · {img.parent.name[3:15]} ({img.stem[:12]})", "Boris Baldinger", "architecture", "瑞士商业肖像大师 Boris Baldinger 伦勃朗布光母本", "Boris Baldinger Archive", "https://www.borisbaldinger.com", img))
-
-    # Pool 9: Cloud-Ready Xinpianchang CDN Seed Catalog (771 High-Collection Films)
+    # Pool 5: Cloud-Ready Xinpianchang CDN Seed Catalog (771 High-Collection Films)
     if CLOUD_SEED_PATH.exists():
         try:
             seeds = json.loads(CLOUD_SEED_PATH.read_text(encoding="utf-8"))
