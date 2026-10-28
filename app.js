@@ -111,7 +111,6 @@
   }
 
   function renderMatrix() {
-    db.forEach(ensureItemShots);
     const items = filterItems();
     const multiShotCount = db.filter((x) => x.shots && x.shots.length > 1).length;
     const v3Count = db.filter((x) => x.shots && x.shots.length >= 8).length;
